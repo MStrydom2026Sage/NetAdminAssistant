@@ -135,8 +135,7 @@ function refreshSources(container, silent) {
     query: currentAnalysis.query,
     product: currentAnalysis.product,
     moduleLabel: currentAnalysis.module?.label,
-    terms: NetAdminAnalyzer.normalizeTerms(`${currentAnalysis.summary} ${currentAnalysis.query}`),
-    errorCodes: currentAnalysis.errorCodes || []
+    terms: currentAnalysis.questionSource === 'Not provided' ? [] : NetAdminAnalyzer.normalizeTerms(currentAnalysis.summary)
   };
   chrome.runtime.sendMessage({ action: 'fetchSources', data: payload }, (response) => {
     if (chrome.runtime.lastError || !response?.success) return renderSources(null);
@@ -155,7 +154,10 @@ function renderAnalysis(data, fromCache, container) {
   let html = `<div class="analysis-header"><h2>${escapeHtml(data.ticketId)}</h2>`
     + `${fromCache ? '<span class="badge cache">Cached</span>' : ''}`
     + `<span class="badge">Offline rules analysis</span>`
-    + `<p class="metadata">${escapeHtml(data.product)}${data.module && data.module.id !== 'unknown' ? ` · ${escapeHtml(data.module.label)}` : ''} · ${escapeHtml(topic.label)}</p></div>`;
+    + `<p class="metadata">${escapeHtml(data.product)}${data.module && data.module.id !== 'unknown' ? ` · ${escapeHtml(data.module.label)}` : ''} · ${escapeHtml(topic.label)}</p></div>`
+    + `<div class="analysis-section"><h3>📝 Ticket query</h3><p class="confidence-text">Source: ${escapeHtml(data.questionSource)}</p>`
+    + `<div class="content">${escapeHtml(data.querySummary || data.summary)}</div>`
+    + `${data.querySummary && data.querySummary !== data.summary ? `<details><summary>Full recorded query</summary><div class="content">${escapeHtml(data.summary)}</div></details>` : ''}</div>`;
 
   html += `<div class="analysis-section root-cause"><h3>🔍 Suggested area (not confirmed)</h3>`
     + `<div class="confidence-bar" style="width:${Math.max(0, Math.min(100, rootCause.confidence * 100))}%"></div>`

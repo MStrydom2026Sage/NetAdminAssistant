@@ -96,24 +96,18 @@
    */
   function rankResults(results = [], context = {}) {
     const terms = (context.terms || []).map((term) => term.toLowerCase()).filter(Boolean);
-    const codes = (context.errorCodes || []).map((code) => code.toLowerCase());
-    const moduleLabel = text(context.moduleLabel).toLowerCase();
-    const product = text(context.product).toLowerCase();
     return results
       .map((result, index) => {
         const haystack = `${result.title} ${result.snippet}`.toLowerCase();
         let score = 0;
-        const matchedTerms = terms.filter((term) => haystack.includes(term));
+        const matchedTerms = terms.filter((term) => new RegExp(`(?:^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^a-z0-9])`, 'i').test(haystack));
         score += matchedTerms.length * 2;
-        score += codes.filter((code) => haystack.includes(code)).length * 6;
-        if (moduleLabel && haystack.includes(moduleLabel)) score += 3;
-        if (product && product !== 'sage product not specified' && haystack.includes(product)) score += 2;
         // An article identifier only breaks ties; it never makes an unrelated
         // result relevant on its own.
-        if (score > 0 && result.articleId) score += 1;
+        if (matchedTerms.length >= 2 && result.articleId) score += 1;
         return Object.assign({}, result, { score, matchedTerms, index });
       })
-      .filter((result) => result.score > 0)
+      .filter((result) => result.matchedTerms.length >= 2)
       .sort((a, b) => b.score - a.score || a.index - b.index)
       .slice(0, MAX_RESULTS)
       .map((result) => {
@@ -147,7 +141,9 @@
    */
   async function fetchSageSources(options = {}) {
     const query = text(options.query);
-    if (!query) return { enabled: true, fetchedAt: Date.now(), results: [], unavailable: SOURCES.map((s) => s.name) };
+    if (!query || !Array.isArray(options.terms) || options.terms.length < 2) {
+      return { enabled: true, fetchedAt: Date.now(), results: [], unavailable: [] };
+    }
     const timeoutMs = options.timeoutMs || TIMEOUT_MS;
     const results = [];
     const unavailable = [];

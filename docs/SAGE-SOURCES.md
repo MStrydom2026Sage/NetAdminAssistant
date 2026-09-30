@@ -4,9 +4,9 @@ The extension can rank live results from the official Sage sources. This is an *
 
 ## What it does
 
-1. The rules engine generates a ticket-specific search phrase (site codes, greetings and ticket references removed).
+1. The rules engine generates a ticket-specific search phrase from the recorded question (site codes, greetings and ticket references removed). If no usable question terms are captured, retrieval is skipped.
 2. The service worker requests the search page of each configured source using the agent's own authenticated browser session.
-3. Result titles, URLs, snippets and article/solution IDs are parsed and ranked against the ticket terms, error codes, module and product.
+3. Result titles, URLs, snippets and article/solution IDs are parsed and gated on at least two terms from the actual question; incidental error codes, module names and product labels cannot make a result relevant.
 4. The top results are shown in the **Sage searches** card, alongside the pre-filled search links.
 
 Nothing is fabricated: only the text present in the retrieved page is displayed, and everything is HTML-escaped.

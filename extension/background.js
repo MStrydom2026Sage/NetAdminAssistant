@@ -101,8 +101,9 @@ async function handleAnalyze(data, sendResponse) {
   try {
     const ticket = data || {};
     const cacheKey = ticket.incidentReference || ticket.ticketId || '';
+    const signature = JSON.stringify([ticket.question, ticket.rawLoggedText, ticket.summary, ticket.subject, ticket.description, ticket.product]);
 
-    const cached = await getCachedAnalysis(cacheKey);
+    const cached = await getCachedAnalysis(cacheKey, signature);
     if (cached) {
       sendResponse({ success: true, data: cached, fromCache: true });
       return;
@@ -116,7 +117,7 @@ async function handleAnalyze(data, sendResponse) {
     const result = NetAdminAnalyzer.analyseTicket(ticket, { knowledge, history });
     const payload = Object.assign({}, result, { duration: Date.now() - started, engine: 'Offline rules analysis' });
 
-    if (cacheKey) await cacheAnalysis(cacheKey, payload);
+    if (cacheKey) await cacheAnalysis(cacheKey, signature, payload);
     sendResponse({ success: true, data: payload, fromCache: false });
   } catch (error) {
     console.error('[NetAdmin Assistant] Analysis error:', error);
@@ -161,17 +162,17 @@ function storageGet(keys) {
 /**
  * Cache analysis result
  */
-async function cacheAnalysis(ticketId, result) {
+async function cacheAnalysis(ticketId, signature, result) {
   const data = await storageGet(['analysisCache']);
   const cache = data.analysisCache || {};
-  cache[ticketId] = { data: result, timestamp: Date.now() };
+  cache[ticketId] = { data: result, signature, timestamp: Date.now() };
   return new Promise((resolve) => chrome.storage.local.set({ analysisCache: cache }, resolve));
 }
 
 /**
  * Retrieve cached analysis
  */
-async function getCachedAnalysis(ticketId) {
+async function getCachedAnalysis(ticketId, signature) {
   if (!ticketId) return null;
   const data = await storageGet(['analysisCache', 'settings']);
   const settings = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
@@ -181,7 +182,7 @@ async function getCachedAnalysis(ticketId) {
   const cached = cache[ticketId];
   if (!cached) return null;
 
-  if (Date.now() - cached.timestamp < (settings.maxCacheAge || CACHE_DURATION)) return cached.data;
+  if (cached.signature === signature && Date.now() - cached.timestamp < (settings.maxCacheAge || CACHE_DURATION)) return cached.data;
 
   delete cache[ticketId];
   chrome.storage.local.set({ analysisCache: cache });
