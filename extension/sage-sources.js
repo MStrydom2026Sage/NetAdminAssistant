@@ -26,14 +26,21 @@
 
   const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
+  const ENTITIES = {
+    '&nbsp;': ' ',
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&#039;': "'",
+    '&apos;': "'"
+  };
+
+  // Single pass so a decoded "&" can never combine with following characters
+  // to form another entity.
   function decodeEntities(value) {
-    return text(value)
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&amp;/gi, '&')
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#0?39;|&apos;/gi, "'");
+    return text(value).replace(/&(?:nbsp|amp|lt|gt|quot|apos|#0?39);/gi, (match) => ENTITIES[match.toLowerCase()] || match);
   }
 
   function stripTags(value) {

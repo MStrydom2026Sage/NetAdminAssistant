@@ -57,3 +57,10 @@ test('only official Sage hosts are configured for retrieval', () => {
   assert.ok(S.SOURCES.every((source) => source.search.startsWith('https://')));
   assert.ok(!S.SOURCES.some((source) => /google/i.test(source.host)));
 });
+
+test('HTML entities are decoded once, never twice', () => {
+  const html = '<a href="/portal/x?a=1&amp;b=2">Bank reconciliation &amp;lt;tag&amp;gt; report</a>';
+  const results = S.parseResults(html, 'kb-za');
+  assert.equal(results[0].url, 'https://za-kb.sage.com/portal/x?a=1&b=2');
+  assert.equal(results[0].title, 'Bank reconciliation &lt;tag&gt; report');
+});
