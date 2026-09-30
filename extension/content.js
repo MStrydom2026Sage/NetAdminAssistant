@@ -35,7 +35,7 @@ function scrapeCurrentTicket() {
     ticketData.ticketId =
       document.querySelector('[data-ticket-id]')?.textContent ||
       document.querySelector('.ticket-id')?.textContent ||
-      document.querySelector('h1')?.textContent?.match(/\d+/)?.()[0] ||
+      document.querySelector('h1')?.textContent?.match(/\d+/)?.[0] ||
       '';
 
     // Subject/Title
@@ -91,7 +91,6 @@ function scrapeCurrentTicket() {
     ticketData.metadata.scrapedAt = new Date().toISOString();
     ticketData.metadata.pageTitle = document.title;
 
-    console.log('[NetAdmin Assistant] Ticket scraped:', ticketData);
   } catch (error) {
     console.error('[NetAdmin Assistant] Scraping error:', error);
   }
@@ -110,7 +109,8 @@ function injectFloatingButton() {
 
   const button = document.createElement('button');
   button.id = 'netadmin-assistant-button';
-  button.innerHTML = '🔍';
+  button.textContent = '🔍';
+  button.setAttribute('aria-label', 'Open NetAdmin analysis');
   button.title = 'Analyze with NetAdmin Assistant';
   button.style.cssText = `
     position: fixed;

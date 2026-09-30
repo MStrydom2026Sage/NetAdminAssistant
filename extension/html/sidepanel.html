@@ -16,9 +16,16 @@
         <button id="clearCacheBtn" class="btn btn-small btn-ghost">🗑️ Clear Cache</button>
       </div>
     </header>
-    <div id="backendStatus" class="status-indicator">Checking backend and AI connection...</div>
+    <div id="backendStatus" class="status-indicator">Offline rules engine ready</div>
     <div id="results" class="analysis-container"><div class="empty-state"><p>Click “Analyze” to start analyzing the current ticket.</p></div></div>
   </div>
+  <section class="analysis-section" aria-label="Support chat">
+    <label for="chatInput">Sage / IT support question</label>
+    <input id="chatInput" type="text" aria-label="Support question">
+    <button id="chatBtn" class="btn btn-small btn-primary">Ask</button>
+    <p id="chatReply" role="status"></p>
+  </section>
+  <script src="../offline-engine.js"></script>
   <script src="../sidepanel.js"></script>
 </body>
 </html>
