@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loadExtension } = require('./load-analyzer');
 const { TICKETS, QUEUE, COMPLETED } = require('./fixtures/tickets');
 
-const { analyzer: A } = loadExtension();
+const { analyzer: A, sources: S } = loadExtension();
 
 for (const fixture of TICKETS) {
   test(`classifies: ${fixture.name}`, () => {
@@ -65,12 +65,14 @@ test('webform answer survives same-line and multiline question markup', () => {
 test('an unrelated error code alone cannot trigger a diagnosis or historical resolution', () => {
   const data = { rawLoggedText: 'How would you best describe this query?: The application freezes when saving a new record.\nError message: 900987',
     subject: 'G/L control account 900987', product: 'Sage 300 Cloud' };
-  const result = A.analyseTicket(data, { knowledge: require('./load-analyzer').loadKnowledgeFile().entries,
-    history: [{ summary: 'G/L control account 900987', terms: ['control', 'account'], errorCodes: ['900987'], topicId: 'gl-control-account', product: 'Sage 300 Cloud', resolution: 'Change A/P control account.' }] });
+  const history = [{ summary: 'G/L control account 900987', terms: ['control', 'account'], errorCodes: ['900987'], topicId: 'gl-control-account', product: 'Sage 300 Cloud', resolution: 'Change A/P control account.' }];
+  const result = A.analyseTicket(data, { knowledge: require('./load-analyzer').loadKnowledgeFile().entries });
   assert.equal(result.topic.id, 'generic');
   assert.equal(result.module.id, 'unknown');
   assert.equal(result.knowledge.length, 0);
-  assert.equal(result.similarTickets.length, 0);
+  // Past tickets are still stored, but they are no longer part of the analysis.
+  assert.equal(result.similarTickets, undefined);
+  assert.equal(A.similarTickets(data, history).length, 0);
   assert.match(result.analysis.rootCause.content, /does not provide enough evidence|cannot identify/i);
   assert.match(result.reply, /application freezes/i);
 });
@@ -111,8 +113,8 @@ test('site codes and greetings are removed from the search phrase', () => {
 test('work already attempted is not proposed again', () => {
   const result = A.analyseTicket(TICKETS[1].data);
   assert.deepEqual(Array.from(result.topic.alreadyTriedLabels), ['tax tables imported', 'Company Rule recalculation']);
-  assert.match(result.topic.steps[0], /^Already reported as done/);
-  assert.ok(!result.topic.steps.slice(1).some((step) => /tax tables|Company Rule recalculation/i.test(step)));
+  assert.ok(result.analysis.solution.facts.some((fact) => /^Already reported as done/.test(fact)));
+  assert.ok(!result.topic.steps.some((step) => /tax tables|Company Rule recalculation/i.test(step)));
   assert.match(result.reply, /we will not ask you to repeat it/);
 });
 
@@ -145,13 +147,22 @@ test('completed tickets are anonymised and ranked as historical context', () => 
     assert.match(record.reference, /^past-[0-9a-f]+$/);
     assert.doesNotMatch(JSON.stringify(record), /WF900|ZA12345|example\.com|082 123/);
   }
-  const result = analyzer.analyseTicket(TICKETS[4].data, { history: records });
-  assert.ok(result.similarTickets.length >= 1);
-  assert.equal(result.similarTickets[0].topicId, 'bank-reconciliation');
-  assert.equal(result.similarTickets[0].confidence, 'historical context only');
-  assert.match(result.similarTickets[0].resolution, /duplicated statement lines/i);
-  const unrelated = analyzer.analyseTicket(TICKETS[9].data, { history: records });
-  assert.equal(unrelated.similarTickets.length, 0);
+  const matches = analyzer.similarTickets(TICKETS[4].data, records);
+  assert.ok(matches.length >= 1);
+  assert.equal(matches[0].topicId, 'bank-reconciliation');
+  assert.equal(matches[0].confidence, 'historical context only');
+  assert.match(matches[0].resolution, /duplicated statement lines/i);
+  assert.equal(analyzer.similarTickets(TICKETS[9].data, records).length, 0);
+});
+
+test('stored history never reaches the analysis, the reply or the panel payload', () => {
+  const { history, analyzer } = loadExtension();
+  const records = COMPLETED.map((item) => history.anonymizeCompletedTicket(item)).filter(Boolean);
+  const withHistory = analyzer.analyseTicket(TICKETS[4].data, { history: records });
+  const withoutHistory = analyzer.analyseTicket(TICKETS[4].data);
+  assert.equal(withHistory.similarTickets, undefined);
+  assert.equal(JSON.stringify(withHistory), JSON.stringify(withoutHistory));
+  assert.doesNotMatch(withHistory.reply, /duplicated statement lines/i);
 });
 
 test('history retention drops expired records and resets cleanly', () => {
@@ -176,4 +187,109 @@ test('offline chat stays in scope and is deterministic', () => {
 test('replies never contain raw HTML from the ticket', () => {
   const data = Object.assign({}, TICKETS[0].data, { customer: { contactName: '<img src=x onerror=alert(1)>' } });
   assert.doesNotMatch(A.analyseTicket(data).reply, /<img/);
+});
+
+/* ------------------------------------------------------------------ *
+ * v0.6.1 follow-up: ticket-specific steps and working Sage links
+ * ------------------------------------------------------------------ */
+
+function query(text, extra = {}) {
+  return Object.assign({
+    incidentReference: 'WF300001',
+    customer: { contactName: 'Thandi' },
+    rawLoggedText: `Product: ${extra.product || 'Sage 300 Cloud'}\nHow would you best describe this query?: ${text}`
+  }, extra.ticket || {});
+}
+
+test('a Sage 300 Cloud French language installation query gets installation-specific checks', () => {
+  const result = A.analyseTicket(query('The client wants to install the French language on Sage 300 Cloud.'));
+  assert.equal(result.topic.id, 'language-installation');
+  const steps = result.analysis.solution.steps.join(' ');
+  assert.match(steps, /licen[cs]e/i);
+  assert.match(steps, /language/i);
+  assert.doesNotMatch(steps, /Reproduce the issue in a safe test environment|Collect screenshots or logs|Check the Sage documentation for the affected area/i);
+});
+
+test('a printing/posting error and a report that does not print get printing-specific checks', () => {
+  const printing = A.analyseTicket(query('The A/R customer statement report does not print, nothing happens when clicking print.'));
+  assert.equal(printing.topic.id, 'printing-output');
+  assert.match(printing.analysis.solution.steps.join(' '), /Print Destination/i);
+  assert.match(printing.analysis.solution.steps.join(' '), /different printer/i);
+
+  const posting = A.analyseTicket(query('Cannot post the A/P invoice batch, posting error on the batch.'));
+  assert.equal(posting.topic.id, 'posting-errors');
+  assert.match(posting.analysis.solution.steps.join(' '), /posting journal|posting error report/i);
+  assert.notDeepEqual(Array.from(printing.analysis.solution.steps), Array.from(posting.analysis.solution.steps));
+});
+
+test('ticket facts, rules-based hypotheses and questions are kept apart', () => {
+  const result = A.analyseTicket(query('The A/R customer statement report does not print.'));
+  const { facts, hypotheses, questions, sufficiency } = result.analysis.solution;
+  assert.equal(sufficiency, 'rules');
+  assert.ok(facts.some((fact) => /How would you best describe this query\?: The A\/R customer statement report does not print/.test(fact)));
+  assert.ok(hypotheses.length);
+  for (const item of hypotheses) assert.match(item.source, /^Local rule: /);
+  assert.ok(questions.every((question) => /^(Ask|The ticket)/.test(question)));
+});
+
+test('an unclassified query asks precise questions instead of boilerplate', () => {
+  const result = A.analyseTicket(query('The screen freezes after the weekend.'));
+  assert.equal(result.topic.id, 'generic');
+  assert.equal(result.analysis.solution.sufficiency, 'questions');
+  assert.equal(result.analysis.solution.hypotheses.length, 0);
+  assert.ok(result.analysis.solution.questions.some((question) => /screen freezes after the weekend/i.test(question)));
+  assert.doesNotMatch(result.analysis.solution.steps.join(' '), /Reproduce the issue in a safe test environment|Collect screenshots or logs|Check the Sage documentation for the affected area/i);
+  assert.match(result.reply, /we do not yet have a validated step/i);
+  assert.match(result.reply, /Kind regards$/);
+});
+
+test('retrieved Sage results are cited, never turned into invented instructions', () => {
+  const base = A.analyseTicket(query('The A/R customer statement report does not print.'));
+  const sources = {
+    enabled: true,
+    results: [{ title: 'Report does not print from Sage 300', url: 'https://za-kb.sage.com/article/12345', snippet: 'Check the print destination.', source: 'Sage Knowledgebase (ZA)', articleId: '12345' }],
+    unavailable: [{ name: 'Sage Community Hub', reason: 'the page returned HTTP 404' }]
+  };
+  const applied = A.applySources(base, sources);
+  const cited = applied.sourcedGuidance.filter((item) => item.kind === 'retrieved');
+  assert.equal(cited.length, 1);
+  assert.equal(cited[0].url, 'https://za-kb.sage.com/article/12345');
+  assert.equal(cited[0].steps.length, 0);
+  assert.match(cited[0].detail, /confirm its instructions/i);
+  assert.match(applied.reply, /Report does not print from Sage 300 \(Sage Knowledgebase \(ZA\)\): https:\/\/za-kb\.sage\.com\/article\/12345/);
+  assert.match(applied.sourceState.unavailable[0].reason, /HTTP 404/);
+  // idempotent, so a refresh cannot double up the reply
+  assert.equal(A.applySources(applied, sources).reply, applied.reply);
+});
+
+test('irrelevant or missing source results never become guidance', () => {
+  const base = A.analyseTicket(query('The A/R customer statement report does not print.'));
+  const disabled = A.applySources(base, { enabled: false, results: [], unavailable: [] });
+  assert.equal(disabled.sourcedGuidance.filter((item) => item.kind === 'retrieved').length, 0);
+  assert.equal(disabled.reply, base.reply);
+  assert.match(disabled.sourceState.message, /switched off/i);
+
+  const unavailable = A.applySources(base, { enabled: true, results: [], unavailable: [{ name: 'Sage Knowledgebase (ZA)', reason: 'the Knowledgebase search endpoint was retired and returns HTTP 404' }] });
+  assert.equal(unavailable.sourcedGuidance.filter((item) => item.kind === 'retrieved').length, 0);
+  assert.match(unavailable.reply, /No official Sage article could be matched/i);
+  assert.match(unavailable.sourceState.message, /HTTP 404/);
+
+  // A result that only shares a product name is filtered out before it is offered.
+  const irrelevant = S.rankResults([{ title: 'Sage 300 Cloud year end checklist', snippet: 'Year end steps', url: 'https://za-kb.sage.com/z' }],
+    { terms: A.normalizeTerms('A/R customer statement report does not print'), errorCodes: [] });
+  assert.equal(irrelevant.length, 0);
+  assert.equal(A.applySources(base, { enabled: true, results: irrelevant, unavailable: [] }).sourcedGuidance.filter((item) => item.kind === 'retrieved').length, 0);
+});
+
+test('no Sage link uses the retired knowledgebase search endpoint', () => {
+  const result = A.analyseTicket(query('The A/R customer statement report does not print.'), { knowledge: require('./load-analyzer').loadKnowledgeFile().entries });
+  const urls = result.topic.links.map((link) => link.url);
+  for (const url of urls) assert.doesNotMatch(url, /viewsearch\.jsp/);
+  assert.ok(urls.some((url) => url === 'https://za-kb.sage.com/'));
+  assert.ok(urls.some((url) => /^https:\/\/www\.google\.com\/search\?q=site%3Aza-kb\.sage\.com/.test(url)));
+  // the Knowledgebase links are labelled as manual, never as a pre-filled search
+  const kb = result.topic.links.find((link) => link.id === 'kb-za');
+  assert.equal(kb.kind, 'home');
+  assert.match(kb.note, /cannot be pre-filled/i);
+  assert.doesNotMatch(JSON.stringify(result), /viewsearch\.jsp/);
 });

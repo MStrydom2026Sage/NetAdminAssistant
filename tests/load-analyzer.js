@@ -17,6 +17,7 @@ function loadExtension() {
     vm.runInContext(fs.readFileSync(full, 'utf8'), context, { filename: full });
   }
   return {
+    context,
     analyzer: context.NetAdminAnalyzer,
     knowledge: context.NetAdminKnowledge,
     history: context.NetAdminHistory,

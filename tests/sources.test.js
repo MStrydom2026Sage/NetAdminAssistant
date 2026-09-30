@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loadExtension } = require('./load-analyzer');
 const { KB_HTML, COMMUNITY_HTML } = require('./fixtures/source-pages');
 
-const { sources: S, analyzer: A } = loadExtension();
+const { sources: S, analyzer: A, context } = loadExtension();
 
 test('knowledgebase results are parsed from a static page', () => {
   const results = S.parseResults(KB_HTML, 'kb-za');
@@ -68,7 +68,7 @@ test('an incidental error code or product name cannot promote an unrelated Sage 
 
 test('only official Sage hosts are configured for retrieval', () => {
   assert.deepEqual(Array.from(S.ALLOWED_HOSTS), ['za-kb.sage.com', 'us-kb.sage.com', 'communityhub.sage.com']);
-  assert.ok(S.SOURCES.every((source) => source.search.startsWith('https://')));
+  assert.ok(S.SOURCES.filter((source) => source.search).every((source) => source.search.startsWith('https://')));
   assert.ok(!S.SOURCES.some((source) => /google/i.test(source.host)));
 });
 
@@ -77,4 +77,54 @@ test('HTML entities are decoded once, never twice', () => {
   const results = S.parseResults(html, 'kb-za');
   assert.equal(results[0].url, 'https://za-kb.sage.com/portal/x?a=1&b=2');
   assert.equal(results[0].title, 'Bank reconciliation &lt;tag&gt; report');
+});
+
+test('the retired knowledgebase search endpoint is never requested again', () => {
+  for (const source of S.SOURCES) {
+    assert.doesNotMatch(`${source.search || ''}${source.home || ''}`, /viewsearch\.jsp/);
+  }
+  const kb = S.SOURCES.filter((source) => /kb\.sage\.com$/.test(source.host));
+  assert.equal(kb.length, 2);
+  for (const source of kb) {
+    assert.equal(source.search, '');
+    assert.match(source.unavailableReason, /404/);
+    assert.match(source.home, /^https:\/\/[a-z]{2}-kb\.sage\.com\/$/);
+  }
+});
+
+test('knowledgebase sources are reported as unavailable instead of being fetched', async () => {
+  const result = await S.fetchSageSources({ query: 'bank reconciliation out of balance', terms: ['bank', 'reconciliation'], timeoutMs: 10 });
+  const names = result.unavailable.map((item) => item.name);
+  assert.ok(names.includes('Sage Knowledgebase (ZA)'));
+  assert.ok(names.includes('Sage Knowledgebase (US)'));
+  const kb = result.unavailable.find((item) => item.name === 'Sage Knowledgebase (ZA)');
+  assert.match(kb.reason, /404/);
+  assert.equal(kb.url, 'https://za-kb.sage.com/');
+  assert.deepEqual(Array.from(result.results), []);
+});
+
+test('branded 404 and unsupported pages are treated as a failure, not as results', () => {
+  assert.equal(S.looksLikeErrorPage('<html><head><title>HTTP Status 404 – Not Found</title></head><body>The requested resource is not available.</body></html>'), true);
+  assert.equal(S.looksLikeErrorPage('<html><body><h1>Page not found</h1></body></html>'), true);
+  assert.equal(S.looksLikeErrorPage(''), true);
+  assert.equal(S.looksLikeErrorPage(KB_HTML), false);
+});
+
+test('a failing source is reported with its reason and never invents results', async () => {
+  const calls = [];
+  const originalFetch = context.fetch;
+  context.fetch = async (url) => {
+    calls.push(url);
+    return { ok: false, status: 404, text: async () => 'HTTP Status 404 - Not Found' };
+  };
+  try {
+    const result = await S.fetchSageSources({ query: 'bank reconciliation', terms: ['bank', 'reconciliation'] });
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /^https:\/\/communityhub\.sage\.com\/search\?q=/);
+    assert.deepEqual(Array.from(result.results), []);
+    const community = result.unavailable.find((item) => item.name === 'Sage Community Hub');
+    assert.match(community.reason, /HTTP 404/);
+  } finally {
+    context.fetch = originalFetch;
+  }
 });

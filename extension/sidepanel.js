@@ -148,7 +148,8 @@ function showError(container, message) {
 }
 
 function renderAnalysis(data, fromCache, container) {
-  const { analysis, topic, knowledge, similarTickets } = data;
+  currentAnalysis = data;
+  const { analysis, topic, knowledge } = data;
   const { rootCause, solution } = analysis;
 
   let html = `<div class="analysis-header"><h2>${escapeHtml(data.ticketId)}</h2>`
@@ -165,8 +166,20 @@ function renderAnalysis(data, fromCache, container) {
     + `<div class="content">${escapeHtml(rootCause.content)}</div>`
     + `${rootCause.evidence?.length ? `<div class="evidence"><strong>Confirmed evidence from the ticket:</strong><ul>${rootCause.evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>` : ''}</div>`;
 
-  html += `<div class="analysis-section solution"><h3>✅ Suggested next steps</h3><div class="content">${escapeHtml(solution.content)}</div>`
-    + `${solution.steps?.length ? `<ol class="steps">${solution.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol>` : ''}</div>`;
+  html += `<div class="analysis-section solution"><h3>✅ Suggested next steps</h3><div class="content">${escapeHtml(solution.content)}</div>`;
+  if (solution.facts?.length) {
+    html += `<div class="evidence"><strong>Confirmed from this ticket:</strong><ul>${solution.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}</ul></div>`;
+  }
+  if (solution.hypotheses?.length) {
+    html += '<p class="confidence-text">Rules-based checks derived from the recorded query. Not verified against a Sage article.</p>'
+      + `<ol class="steps">${solution.hypotheses.map((item) => `<li>${escapeHtml(item.text)}<span class="confidence-text"> — ${escapeHtml(item.source)}</span></li>`).join('')}</ol>`;
+  }
+  if (solution.questions?.length) {
+    html += `<p class="confidence-text">${solution.hypotheses?.length ? 'Still to confirm with the customer:' : 'No validated step yet. Ask the customer:'}</p>`
+      + `<ul class="steps">${solution.questions.map((question) => `<li>${escapeHtml(question)}</li>`).join('')}</ul>`;
+  }
+  html += '</div>';
+  html += renderSourcedGuidance(data);
 
   if (knowledge?.length) {
     html += '<div class="analysis-section solution"><h3>📘 Local knowledge base</h3><div class="search-sources">';
@@ -180,23 +193,8 @@ function renderAnalysis(data, fromCache, container) {
     html += '</div></div>';
   }
 
-  html += '<div class="analysis-section" id="similarSection"><h3>🗂️ Similar completed tickets</h3>';
-  if (similarTickets?.length) {
-    html += '<p class="confidence-text">Historical context from completed tickets stored locally. Not authoritative.</p><div class="search-sources">';
-    similarTickets.forEach((item) => {
-      html += `<div class="source"><span class="source-name">${escapeHtml(item.reference)}${item.closedPeriod ? ` · closed ${escapeHtml(item.closedPeriod)}` : ''}</span>`
-        + `<div class="content">${escapeHtml(item.summary)}</div>`
-        + `${item.resolution ? `<div class="content"><strong>Recorded action:</strong> ${escapeHtml(item.resolution)}</div>` : '<p class="confidence-text">No resolution text was captured for this ticket.</p>'}`
-        + `<p class="confidence-text">Match score ${escapeHtml(String(item.score))} · ${escapeHtml(item.confidence)}</p></div>`;
-    });
-    html += '</div>';
-  } else {
-    html += '<p class="confidence-text">No similar completed tickets were found in the local history.</p>';
-  }
-  html += '</div>';
-
   html += `<div class="analysis-section search"><h3>🔎 Sage searches</h3><div class="search-query"><strong>${escapeHtml(data.query)}</strong><div class="search-sources">`
-    + `<div class="source"><span class="source-name">Pre-filled searches (click to open)</span><ul>${topic.links.map((link) => `<li>${safeLink(link)}</li>`).join('')}</ul></div>`
+    + `<div class="source"><span class="source-name">Search links (click to open)</span><ul>${topic.links.map((link) => `<li>${safeLink(link)}${link.note ? `<span class="confidence-text"> — ${escapeHtml(link.note)}</span>` : ''}</li>`).join('')}</ul></div>`
     + '</div></div><div id="liveSources"></div></div>';
 
   container.innerHTML = html;
@@ -210,21 +208,58 @@ function renderAnalysis(data, fromCache, container) {
   renderSources(null);
 }
 
+/** Guidance that can be attributed to a source, with the source next to it. */
+function renderSourcedGuidance(data) {
+  const guidance = (data.sourcedGuidance || []).filter((item) => item.kind === 'retrieved');
+  const state = data.sourceState || {};
+  let html = '<div class="analysis-section solution" id="sourcedGuidance"><h3>📎 Guidance from matched Sage sources</h3>';
+  if (!guidance.length) {
+    html += `<p class="confidence-text">${escapeHtml(state.message || 'No official Sage article has been matched to this query.')}</p>`;
+    return `${html}</div>`;
+  }
+  html += '<p class="confidence-text">Retrieved from the official Sage sources. Titles and extracts only — open each article to confirm its instructions.</p><div class="search-sources">';
+  guidance.forEach((item) => {
+    html += `<div class="source"><span class="source-name">${safeLink(item)}</span>`
+      + `${item.snippet ? `<div class="content">${escapeHtml(item.snippet)}</div>` : ''}`
+      + `<p class="confidence-text">${escapeHtml(item.source)} · ${escapeHtml(item.detail)}</p></div>`;
+  });
+  html += '</div>';
+  if (state.unavailable?.length) {
+    html += `<p class="confidence-text">Unavailable: ${escapeHtml(describeUnavailable(state.unavailable))}</p>`;
+  }
+  return `${html}</div>`;
+}
+
+function describeUnavailable(list) {
+  return (list || []).map((item) => (item.reason ? `${item.name} — ${item.reason}` : item.name)).join('; ');
+}
+
 function renderSources(sources) {
   const target = document.getElementById('liveSources');
   if (!target) return;
+  // Re-apply the retrieval result so the panel, the sourced guidance and the
+  // draft reply always describe the same state, including after a refresh and
+  // when retrieval is switched off or unavailable.
+  if (currentAnalysis) {
+    currentAnalysis = NetAdminAnalyzer.applySources(currentAnalysis, sources);
+    const replyText = document.getElementById('replyText');
+    if (replyText) replyText.value = currentAnalysis.reply;
+    const guidanceTarget = document.getElementById('sourcedGuidance');
+    if (guidanceTarget) guidanceTarget.outerHTML = renderSourcedGuidance(currentAnalysis);
+  }
+  const state = currentAnalysis?.sourceState || {};
   if (!sources || sources.enabled === false) {
-    target.innerHTML = '<p class="confidence-text">Live Sage Knowledgebase and Community Hub retrieval is switched off. The pre-filled searches above stay available.</p>';
+    target.innerHTML = '<p class="confidence-text">Live Sage Knowledgebase and Community Hub retrieval is switched off. The search links above are click-through only.</p>';
     return;
   }
   if (!sources.results?.length) {
-    target.innerHTML = `<p class="confidence-text">No live results could be read${sources.unavailable?.length ? ` (${escapeHtml(sources.unavailable.join(', '))} unavailable)` : ''}. Use the pre-filled searches above.</p>`;
+    target.innerHTML = `<p class="confidence-text">No live result could be read${state.unavailable?.length ? ` (${escapeHtml(describeUnavailable(state.unavailable))})` : ''}. Use the search links above instead.</p>`;
     return;
   }
   const stamp = sources.fetchedAt ? new Date(sources.fetchedAt).toLocaleTimeString() : '';
   target.innerHTML = `<div class="source"><span class="source-name">Live Sage results${stamp ? ` · retrieved ${escapeHtml(stamp)}` : ''}</span><ul>`
     + sources.results.map((result) => `<li>${safeLink(result)}${result.articleId ? ` <span class="badge">ID ${escapeHtml(result.articleId)}</span>` : ''}${result.snippet ? `<div class="content">${escapeHtml(result.snippet)}</div>` : ''}<p class="confidence-text">${escapeHtml(result.source)}</p></li>`).join('')
-    + `</ul>${sources.unavailable?.length ? `<p class="confidence-text">Unavailable: ${escapeHtml(sources.unavailable.join(', '))}</p>` : ''}</div>`;
+    + `</ul>${state.unavailable?.length ? `<p class="confidence-text">Unavailable: ${escapeHtml(describeUnavailable(state.unavailable))}</p>` : ''}</div>`;
 }
 
 /** Only render https links, with the text escaped. */

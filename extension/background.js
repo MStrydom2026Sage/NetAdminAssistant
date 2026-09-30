@@ -109,12 +109,11 @@ async function handleAnalyze(data, sendResponse) {
       return;
     }
 
-    const [knowledge, history] = await Promise.all([
-      NetAdminKnowledge.loadKnowledge(),
-      NetAdminHistory.loadHistory()
-    ]);
+    // Past-ticket learning is still stored locally and can be reset from the
+    // side panel, but historical matches no longer feed the current diagnosis.
+    const knowledge = await NetAdminKnowledge.loadKnowledge();
 
-    const result = NetAdminAnalyzer.analyseTicket(ticket, { knowledge, history });
+    const result = NetAdminAnalyzer.analyseTicket(ticket, { knowledge });
     const payload = Object.assign({}, result, { duration: Date.now() - started, engine: 'Offline rules analysis' });
 
     if (cacheKey) await cacheAnalysis(cacheKey, signature, payload);

@@ -16,11 +16,42 @@
   const MAX_RESULTS = 5;
   const MAX_SNIPPET = 220;
 
+  // The Knowledgebase search endpoint that was used here
+  // (/portal/app/portlets/results/viewsearch.jsp) now answers with
+  // "HTTP Status 404 - Not Found". No replacement query endpoint has been
+  // verified, so the Knowledgebase is configured with no search URL: it is
+  // reported as unavailable for retrieval instead of being fetched, and its
+  // home page is offered as a manual click-through. Its host stays on the
+  // allowlist so that Knowledgebase links remain renderable and parsable.
   const SOURCES = [
-    { id: 'kb-za', name: 'Sage Knowledgebase (ZA)', host: 'za-kb.sage.com', search: 'https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=' },
-    { id: 'kb-us', name: 'Sage Knowledgebase (US)', host: 'us-kb.sage.com', search: 'https://us-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=' },
-    { id: 'community', name: 'Sage Community Hub', host: 'communityhub.sage.com', search: 'https://communityhub.sage.com/search?q=' }
+    {
+      id: 'kb-za',
+      name: 'Sage Knowledgebase (ZA)',
+      host: 'za-kb.sage.com',
+      home: 'https://za-kb.sage.com/',
+      search: '',
+      unavailableReason: 'the Knowledgebase search endpoint was retired and returns HTTP 404; open the Knowledgebase and search there'
+    },
+    {
+      id: 'kb-us',
+      name: 'Sage Knowledgebase (US)',
+      host: 'us-kb.sage.com',
+      home: 'https://us-kb.sage.com/',
+      search: '',
+      unavailableReason: 'the Knowledgebase search endpoint was retired and returns HTTP 404; open the Knowledgebase and search there'
+    },
+    { id: 'community', name: 'Sage Community Hub', host: 'communityhub.sage.com', home: 'https://communityhub.sage.com/', search: 'https://communityhub.sage.com/search?q=' }
   ];
+
+  // Branded error pages are served with a 200 status by some portals, so the
+  // body is checked as well as the HTTP status.
+  const ERROR_PAGE = /HTTP Status 404|status code[^<]{0,20}404|\b404\b[^<]{0,20}(?:not found|error)|not found[^<]{0,20}\b404\b|page (?:cannot be found|not found)|requested (?:resource|page|url)[^<]{0,40}(?:not (?:available|found)|unavailable)|service unavailable/i;
+
+  /** True when the body is a branded 404 / unsupported page rather than results. */
+  function looksLikeErrorPage(html) {
+    if (typeof html !== 'string' || !html.trim()) return true;
+    return ERROR_PAGE.test(html.slice(0, 4000));
+  }
 
   const ALLOWED_HOSTS = SOURCES.map((source) => source.host);
 
@@ -126,9 +157,10 @@
         redirect: 'follow',
         signal: controller ? controller.signal : undefined
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.text();
-      return body.slice(0, MAX_BYTES);
+      if (!response.ok) throw new Error(`the page returned HTTP ${response.status}`);
+      const body = (await response.text()).slice(0, MAX_BYTES);
+      if (looksLikeErrorPage(body)) throw new Error('the page returned a not-found or unsupported response');
+      return body;
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -148,13 +180,17 @@
     const results = [];
     const unavailable = [];
     for (const source of SOURCES) {
+      if (!source.search) {
+        unavailable.push({ name: source.name, reason: source.unavailableReason || 'no supported search endpoint is configured', url: source.home || '' });
+        continue;
+      }
       try {
         const html = await fetchText(`${source.search}${encodeURIComponent(query)}`, timeoutMs);
         const parsed = parseResults(html, source.id);
-        if (!parsed.length) unavailable.push(source.name);
+        if (!parsed.length) unavailable.push({ name: source.name, reason: 'no result could be read from the page', url: source.home || '' });
         results.push(...parsed);
       } catch (error) {
-        unavailable.push(source.name);
+        unavailable.push({ name: source.name, reason: (error && error.message) || 'the page could not be read', url: source.home || '' });
       }
     }
     return {
@@ -172,6 +208,7 @@
     TIMEOUT_MS,
     MAX_RESULTS,
     parseResults,
+    looksLikeErrorPage,
     rankResults,
     safeUrl,
     fetchSageSources
