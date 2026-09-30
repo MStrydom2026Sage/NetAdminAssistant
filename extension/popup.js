@@ -1,87 +1,48 @@
 /**
  * Popup Script
- * Quick access UI for analysis
+ * Quick access UI for the offline analysis.
  */
-
-const apiUrl = 'http://localhost:3000';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const analyzeBtn = document.getElementById('analyzeBtn');
-  const historyBtn = document.getElementById('historyBtn');
-  const settingsBtn = document.getElementById('settingsBtn');
+  const panelBtn = document.getElementById('panelBtn');
   const statusDiv = document.getElementById('status');
   const resultsDiv = document.getElementById('results');
+  const backendStatus = document.getElementById('backendStatus');
 
-  // Check backend status
-  await updateBackendStatus();
+  if (backendStatus) {
+    backendStatus.textContent = '✅ Offline rules analysis ready';
+    backendStatus.className = 'status-indicator healthy';
+  }
 
-  // Analyze button
   analyzeBtn?.addEventListener('click', async () => {
-    statusDiv.textContent = 'Scraping ticket...';
-    resultsDiv.innerHTML = '';
+    statusDiv.textContent = 'Reading ticket...';
+    resultsDiv.textContent = '';
 
     try {
-      // Get current tab
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      // Request ticket scrape from content script
-      chrome.tabs.sendMessage(
-        tab.id,
-        { action: 'scrapeTicket' },
-        async (response) => {
-          if (response.success) {
-            statusDiv.textContent = 'Analyzing ticket...';
-            const result = await analyzeTicket(response.data);
-            displayResults(result);
-          } else {
-            statusDiv.textContent = 'Failed to scrape ticket';
-          }
+      chrome.tabs.sendMessage(tab.id, { action: 'scrapeTicket' }, async (response) => {
+        if (chrome.runtime.lastError || !response?.success) {
+          statusDiv.textContent = 'Open a NetAdmin ticket and refresh the page.';
+          return;
         }
-      );
+        statusDiv.textContent = 'Analyzing ticket...';
+        displayResults(await analyzeTicket(response.data));
+      });
     } catch (error) {
       statusDiv.textContent = `Error: ${error.message}`;
     }
   });
 
-  // History button
-  historyBtn?.addEventListener('click', () => {
-    chrome.runtime.openOptionsPage?.();
-  });
-
-  // Settings button
-  settingsBtn?.addEventListener('click', () => {
-    // Open settings page
-    chrome.tabs.create({ url: 'html/options.html' });
+  panelBtn?.addEventListener('click', async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) chrome.sidePanel?.open({ tabId: tab.id });
   });
 });
 
-async function updateBackendStatus() {
-  const statusDiv = document.getElementById('backendStatus');
-  if (!statusDiv) return;
-
-  try {
-    const response = await fetch(`${apiUrl}/health`, { timeout: 5000 });
-    if (response.ok) {
-      statusDiv.textContent = '✅ Backend connected';
-      statusDiv.style.color = '#00a651';
-    } else {
-      statusDiv.textContent = '❌ Backend unavailable';
-      statusDiv.style.color = '#d32f2f';
-    }
-  } catch (error) {
-    statusDiv.textContent = '❌ Backend offline';
-    statusDiv.style.color = '#d32f2f';
-  }
-}
-
 async function analyzeTicket(ticketData) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { action: 'analyze', data: ticketData },
-      (response) => {
-        resolve(response);
-      }
-    );
+    chrome.runtime.sendMessage({ action: 'analyze', data: ticketData }, resolve);
   });
 }
 
@@ -89,36 +50,25 @@ function displayResults(result) {
   const resultsDiv = document.getElementById('results');
   const statusDiv = document.getElementById('status');
 
-  if (!result.success) {
-    statusDiv.textContent = `Analysis failed: ${result.error}`;
+  if (!result?.success) {
+    statusDiv.textContent = `Analysis failed: ${result?.error || 'unknown error'}`;
     return;
   }
 
   const { data } = result;
-  const { analysis } = data;
+  resultsDiv.textContent = '';
+  resultsDiv.appendChild(section('Suggested area', data.analysis.rootCause.content));
+  resultsDiv.appendChild(section('Suggested next steps', data.analysis.solution.steps.join('\n')));
+  statusDiv.textContent = `Offline rules analysis completed in ${data.duration}ms`;
+}
 
-  resultsDiv.innerHTML = `
-    <div class="result-section">
-      <h3>Root Cause</h3>
-      <p>${analysis.rootCause.content}</p>
-      <div class="confidence">Confidence: ${(analysis.rootCause.confidence * 100).toFixed(0)}%</div>
-    </div>
-    <div class="result-section">
-      <h3>Solution</h3>
-      <p>${analysis.solution.content}</p>
-    </div>
-    <div class="result-section">
-      <h3>Search Results</h3>
-      ${analysis.searchResults.map(r => `
-        <div class="search-result">
-          <strong>${r.query}</strong>
-          ${r.results.kb?.results?.slice(0, 2).map(item => `
-            <div><a href="${item.url}" target="_blank">${item.title}</a></div>
-          `).join('') || '<p>No results</p>'}
-        </div>
-      `).join('')}
-    </div>
-  `;
-
-  statusDiv.textContent = `Analysis completed in ${data.duration}ms`;
+function section(title, body) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'result-section';
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  const paragraph = document.createElement('p');
+  paragraph.textContent = body;
+  wrapper.append(heading, paragraph);
+  return wrapper;
 }

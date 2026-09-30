@@ -1,19 +1,20 @@
 {
   "manifest_version": 3,
   "name": "NetAdmin Assistant - Sage 300 Support Helper",
-  "version": "0.5.4",
-  "description": "AI-powered ticket analyzer for Sage 300 support. Analyzes NetAdmin tickets and suggests solutions.",
+  "version": "0.6.0",
+  "description": "Offline rules analysis for Sage 300 support tickets. No AI service, API key or helper server required.",
   "author": "MStrydom2026",
   "permissions": [
     "storage",
     "tabs",
-    "scripting",
-    "webRequest"
+    "sidePanel"
   ],
   "host_permissions": [
     "https://netadmin.sage.co.za/*",
     "https://*.sage.co.za/*",
-    "http://localhost:3000/*"
+    "https://za-kb.sage.com/*",
+    "https://us-kb.sage.com/*",
+    "https://communityhub.sage.com/*"
   ],
   "action": {
     "default_popup": "html/popup.html",

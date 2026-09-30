@@ -1,268 +1,75 @@
-# Development Setup Guide
+# Setup and Install Guide
 
 ## Prerequisites
 
-- **Node.js:** v16+ (LTS recommended)
-- **Chrome/Chromium:** v90+
-- **Azure OpenAI API Key** (or use Mock provider)
-- **Git:** for version control
+- **Chrome/Chromium:** v114+ (side panel support)
+- **Node.js:** v18+ — only needed to run the regression tests
+- **Git**
 
-## Installation
+There is no backend server, no API key, no AI provider and no `npm install` step for normal use.
 
-### 1. Clone Repository
+## 1. Clone the repository
 
 ```bash
-git clone https://github.com/MStrydom2026/NetAdminAssistant.git
+git clone https://github.com/MStrydom2026Sage/NetAdminAssistant.git
 cd NetAdminAssistant
 ```
 
-### 2. Backend Setup
+## 2. Load the unpacked extension
 
-```bash
-cd server
-npm install
-cp .env.example .env
-```
-
-Edit `.env` with your credentials:
-
-```env
-AI_PROVIDER=azure
-AZURE_OPENAI_API_KEY=your-key-here
-AZURE_OPENAI_ENDPOINT=https://your-org.openai.azure.com/
-AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment-name
-```
-
-Start the server:
-
-```bash
-npm run dev
-```
-
-You should see:
-```
-╔════════════════════════════════════════════════╗
-║   NetAdmin Assistant Backend Started           ║
-║          Listening on port 3000                ║
-║        Environment: development                ║
-╚════════════════════════════════════════════════╝
-```
-
-### 3. Chrome Extension Setup
-
-1. Open **Chrome Extensions**: `chrome://extensions/`
-2. Enable **Developer mode** (toggle in top-right)
+1. Open `chrome://extensions/`
+2. Enable **Developer mode**
 3. Click **Load unpacked**
-4. Select the `extension` folder from this repo
+4. Select the `extension/` folder
+5. Confirm the extension loads with no errors (the service worker runs the local rules engine)
 
-You should see the extension appear in your extensions list with a green icon.
+## 3. Use it
 
-### 4. Test Everything
+1. Open a NetAdmin ticket at `https://netadmin.sage.co.za/...`
+2. Click the green 🔍 floating button, or open the side panel from the extension icon
+3. Click **Analyze**
 
-**Backend Health:**
-```bash
-curl http://localhost:3000/health
-```
+The side panel shows the suggested area, suggested next steps, local knowledge-base matches, similar completed tickets, pre-filled Sage searches and a draft customer reply.
 
-Should return:
-```json
-{
-  "status": "healthy",
-  "service": "NetAdmin Assistant Backend",
-  "version": "0.5.3",
-  "aiProvider": "azure"
-}
-```
+## 4. Optional settings (side panel → Local data)
 
-**Extension:**
-1. Navigate to a NetAdmin ticket page
-2. Look for the green 🔍 floating button (bottom-right)
-3. Click it → analysis panel opens
-4. Click "Analyze" → should process and display results
+| Setting | Default | Effect |
+|---|---|---|
+| Retrieve live Sage Knowledgebase and Community Hub results | Off | Fetches and ranks results from the official Sage domains using your signed-in browser session |
+| Learn from completed NetAdmin tickets on this device | On | Stores anonymised records of completed tickets already visible in NetAdmin |
+| Reset stored ticket learning | — | Deletes every stored record immediately |
 
-## Development Workflow
+**Before enabling live retrieval, confirm with Sage IT / InfoSec that automated reading of the Knowledgebase and Community Hub is acceptable.** See [docs/SAGE-SOURCES.md](docs/SAGE-SOURCES.md) for how to disable it permanently.
 
-### Running in Development
+## 5. Local storage and retention
 
-**Terminal 1 - Backend:**
-```bash
-cd server
-npm run dev
-```
+Everything is stored in `chrome.storage.local`:
 
-**Terminal 2 - Chrome:**
-- Open `chrome://extensions/`
-- Enable Developer Mode
-- Click Reload on NetAdmin Assistant
-- Open DevTools (F12) to see console logs
+| Key | Contents | Retention |
+|---|---|---|
+| `analysisCache` | Cached analyses keyed by ticket reference | 24 hours, or **Clear Cache** |
+| `settings` | The toggles above | Until changed |
+| `completedTicketKnowledge` | Anonymised completed-ticket records | Max 200 records / 180 days, or **Reset stored ticket learning** |
 
-### Making Changes
+Removing the extension removes all of it.
 
-**Backend Code:**
-- Changes auto-reload with `nodemon`
-- Check terminal for errors
-- Restart if needed: Ctrl+C, then `npm run dev`
-
-**Extension Code:**
-- Edit `.js` or `.css` files
-- Click Reload button in `chrome://extensions/`
-- Refresh the webpage
-
-### Database
-
-View the SQLite database:
-```bash
-sqlite3 data/netadmin-assistant.db
-
-# Common queries
-.tables                    # List all tables
-SELECT * FROM tickets;     # View analyzed tickets
-SELECT * FROM analyses;    # View analysis results
-```
-
-### Testing with Mock Provider
-
-To test without Azure OpenAI:
+## 6. Run the tests
 
 ```bash
-# In server/.env
-AI_PROVIDER=mock
-
-# Restart server
-npm run dev
+npm test         # node --test tests/*.test.js
+npm run samples  # print the analysis for every sample ticket
 ```
 
-Now responses are simulated locally (no API calls).
+No dependencies are installed and no network calls are made.
 
-## Debugging
+## 7. Upgrading from the AI/backend version
 
-### Backend Logs
+The `server/` backend, the OpenAI/Azure providers and the `http://localhost:3000` host permission have been removed. If you previously ran the helper server you can stop it; delete any `.env` file containing API keys. Reload the unpacked extension after pulling.
 
-Logs appear in console with color-coding:
-- 🔴 **ERROR** - Red
-- 🟡 **WARN** - Yellow  
-- 🔵 **INFO** - Cyan
-- 🟣 **DEBUG** - Magenta (if `LOG_LEVEL=debug`)
+## Troubleshooting
 
-### Extension Debugging
-
-1. Open Chrome DevTools (F12)
-2. Go to **Console** tab
-3. Look for `[NetAdmin Assistant]` prefixed logs
-4. Check **Network** tab for API calls
-5. Check **Application** → **Storage** → **Local Storage** for cache
-
-### API Testing
-
-**Postman Collection:**
-```bash
-# Save this as netadmin-assistant.postman_collection.json
-```
-
-**Health Check:**
-```bash
-curl http://localhost:3000/health
-```
-
-**Analyze Ticket:**
-```bash
-curl -X POST http://localhost:3000/api/analyze \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ticketId": "TEST001",
-    "subject": "Test Ticket",
-    "description": "This is a test"
-  }'
-```
-
-**Get History:**
-```bash
-curl http://localhost:3000/api/history/tickets
-```
-
-## Common Issues
-
-### Port 3000 Already in Use
-
-```bash
-# Find what's using port 3000
-lsof -i :3000
-
-# Kill the process
-kill -9 <PID>
-
-# Or use a different port
-PORT=3001 npm run dev
-```
-
-### Azure OpenAI Connection Failed
-
-1. Check `.env` file - is it in `server/` directory?
-2. Verify `AZURE_OPENAI_API_KEY` is not empty
-3. Verify endpoint URL ends with `/`
-4. Check network connectivity
-5. Fall back to Mock: `AI_PROVIDER=mock`
-
-### Extension Not Loading
-
-```bash
-# Check Chrome version
-# Open chrome://version/
-
-# If error in manifest, check:
-# 1. JSON syntax is valid
-# 2. All referenced files exist
-# 3. Open chrome://extensions/ - look at "Details" for error
-```
-
-### Ticket Not Scraping
-
-The content script uses generic selectors. If NetAdmin uses different DOM structure:
-
-1. Open DevTools on ticket page (F12)
-2. Find the actual selectors:
-   - Right-click ticket ID → Inspect
-   - Note the element's class/id
-3. Edit `extension/content.js`
-4. Update selectors in `scrapeCurrentTicket()` function
-5. Reload extension
-
-## Environment Variables Reference
-
-| Variable | Description | Default |
-|----------|-------------|----------|
-| `PORT` | Server port | 3000 |
-| `NODE_ENV` | Environment (dev/prod) | development |
-| `LOG_LEVEL` | Logging verbosity | info |
-| `AI_PROVIDER` | AI backend (azure/openai/mock) | azure |
-| `AZURE_OPENAI_API_KEY` | Azure API key | - |
-| `AZURE_OPENAI_ENDPOINT` | Azure endpoint URL | - |
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | Deployment name | - |
-| `DB_PATH` | SQLite database path | ./data/netadmin-assistant.db |
-| `ENABLE_LOCAL_ANALYSIS` | Enable fallback | true |
-| `ENABLE_ATTACHMENT_PROCESSING` | Process files | true |
-| `ENABLE_TICKET_CACHING` | Cache results | true |
-| `MAX_CACHE_AGE_HOURS` | Cache TTL | 24 |
-
-## Next Steps
-
-1. ✅ Start backend server
-2. ✅ Load Chrome extension
-3. ✅ Test on a NetAdmin ticket page
-4. 📝 Read [API Documentation](docs/API.md)
-5. 📚 Review [Architecture](docs/ARCHITECTURE.md)
-6. 🔧 Customize selectors for your NetAdmin instance
-7. 🚀 Deploy to production
-
-## Support
-
-For issues:
-1. Check this guide first
-2. Review backend logs in terminal
-3. Check extension console (DevTools)
-4. Open an issue on GitHub
-
----
-
-**Last Updated:** 2026-09-16
-**Version:** 0.5.3
+| Symptom | Fix |
+|---|---|
+| "Refresh the NetAdmin page and try again." | The content script was injected before the extension reloaded — refresh the NetAdmin tab |
+| The same analysis appears for two tickets | Click **Clear Cache**; if it persists the ticket page did not expose the Summary field — check the ticket detail is visible before analysing |
+| No live Sage results | Retrieval is off by default, the session may not be signed in, or the source is unavailable. The pre-filled searches always work |

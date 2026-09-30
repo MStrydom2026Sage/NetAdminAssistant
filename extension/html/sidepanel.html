@@ -13,12 +13,40 @@
       <h1>NetAdmin Analysis</h1>
       <div class="header-actions">
         <button id="analyzeBtn" class="btn btn-small btn-primary">🔍 Analyze</button>
+        <button id="refreshSourcesBtn" class="btn btn-small btn-ghost">🔄 Refresh Sage sources</button>
         <button id="clearCacheBtn" class="btn btn-small btn-ghost">🗑️ Clear Cache</button>
       </div>
     </header>
-    <div id="backendStatus" class="status-indicator">Checking backend and AI connection...</div>
+    <div id="backendStatus" class="status-indicator">Offline rules analysis ready</div>
     <div id="results" class="analysis-container"><div class="empty-state"><p>Click “Analyze” to start analyzing the current ticket.</p></div></div>
+
+    <section class="analysis-section" id="replySection" hidden>
+      <h3>✉️ Suggested customer reply</h3>
+      <p class="confidence-text">Suggested guidance only. Review and edit before sending.</p>
+      <textarea id="replyText" class="reply-text" rows="12" aria-label="Suggested customer reply"></textarea>
+      <button id="copyReplyBtn" class="btn btn-small btn-ghost">📋 Copy reply</button>
+    </section>
+
+    <section class="analysis-section" id="chatSection">
+      <h3>💬 Offline support assistant</h3>
+      <label class="field-label" for="chatInput">Ask a Sage or IT support question about this ticket</label>
+      <textarea id="chatInput" class="reply-text" rows="3" aria-label="Sage or IT support question"></textarea>
+      <button id="chatBtn" class="btn btn-small btn-primary">Ask</button>
+      <p id="chatReply" class="content" role="status"></p>
+    </section>
+
+    <section class="analysis-section" id="privacySection">
+      <h3>🔒 Local data</h3>
+      <label class="toggle"><input type="checkbox" id="liveSourcesToggle"> Retrieve live Sage Knowledgebase and Community Hub results</label>
+      <label class="toggle"><input type="checkbox" id="learnToggle"> Learn from completed NetAdmin tickets on this device</label>
+      <p id="historyCount" class="confidence-text"></p>
+      <button id="resetHistoryBtn" class="btn btn-small btn-ghost">🧹 Reset stored ticket learning</button>
+    </section>
+
+    <p class="disclaimer">Offline rules analysis. Suggested guidance is generated from local rules, the local knowledge base and previously completed tickets on this device. It is not a confirmed Sage answer, and ticket content is never sent to an AI service or any third party.</p>
+    <footer class="app-footer">NetAdmin Assistant · offline rules engine · no API key or helper server required</footer>
   </div>
+  <script src="../analyze.js"></script>
   <script src="../sidepanel.js"></script>
 </body>
 </html>

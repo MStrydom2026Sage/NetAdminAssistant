@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "updated": "2026-09-30",
+  "notes": "Curated Sage support knowledge used by the offline rules engine. See docs/KNOWLEDGE-BASE.md before editing.",
+  "entries": [
+    {
+      "id": "kb-people-mcs-password",
+      "title": "Sage 300 People MCS service cannot start after a password change",
+      "product": "Sage 300 People",
+      "module": "people",
+      "topicId": "people-mcs-password",
+      "keywords": ["mcs", "mcs service", "password expired", "service will not start"],
+      "phrases": ["mcs", "password", "service"],
+      "errorPatterns": ["logon failure", "the service did not start"],
+      "likelyCause": "The Windows or SQL account used by the MCS service has a new or expired password, so the stored credentials no longer authenticate.",
+      "steps": [
+        "Confirm the account used by the MCS service and whether its password changed or expired.",
+        "Update the credentials in the Sage 300 People configuration utility.",
+        "Restart the MCS service and confirm it starts under the correct account."
+      ],
+      "alreadyDonePatterns": ["password reset", "service restarted"],
+      "links": [{ "title": "Sage Knowledgebase search: Sage 300 People MCS service", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20People%20MCS%20service" }],
+      "source": "Local knowledge base (support team)"
+    },
+    {
+      "id": "kb-people-ess-mobile",
+      "title": "ESS mobile registration fails with an invalid or expired QR code",
+      "product": "Sage 300 People",
+      "module": "people",
+      "topicId": "people-ess-mobile",
+      "keywords": ["ess", "self service", "qr code", "mobile app", "registration"],
+      "phrases": ["ess", "mobile", "registration"],
+      "errorPatterns": ["invalid qr code", "registration failed"],
+      "likelyCause": "Registration codes are time limited and tied to the employee self-service user, so an expired code or an inactive ESS user blocks registration.",
+      "steps": [
+        "Confirm the employee is active and linked to an enabled ESS user.",
+        "Generate a new registration QR code and use it immediately.",
+        "Confirm the device date, time and network access to the ESS URL."
+      ],
+      "alreadyDonePatterns": ["qr code regenerated"],
+      "links": [{ "title": "Sage Knowledgebase search: Sage 300 People ESS mobile registration", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20People%20ESS%20mobile%20registration" }],
+      "source": "Local knowledge base (support team)"
+    },
+    {
+      "id": "kb-people-paye-difference",
+      "title": "PAYE differs between two payroll periods",
+      "product": "Sage 300 People",
+      "module": "people",
+      "topicId": "people-tax-paye",
+      "keywords": ["paye", "employee tax", "tax difference", "tax table", "company rule"],
+      "phrases": ["paye", "tax", "payroll"],
+      "errorPatterns": [],
+      "likelyCause": "PAYE is calculated on the annual equivalent, so once-off earnings, backdated payments, a changed tax status or outdated tax tables change the result between periods.",
+      "steps": [
+        "Confirm the tax tables for the tax year were imported.",
+        "Compare taxable earnings, deductions and year-to-date values for both periods.",
+        "Check for once-off or backdated earnings that change the annual equivalent.",
+        "Recalculate in a copy of the database before changing live payroll data."
+      ],
+      "alreadyDonePatterns": ["tax tables imported", "Company Rule recalculation"],
+      "links": [{ "title": "Sage Knowledgebase search: Sage 300 People PAYE calculation", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20People%20PAYE%20calculation" }],
+      "source": "Local knowledge base (support team)"
+    },
+    {
+      "id": "kb-bom-batch-yield",
+      "title": "Bill of materials does not produce the expected batch yield",
+      "product": "Sage 300 Cloud",
+      "module": "ic",
+      "topicId": "bom-assembly",
+      "keywords": ["bill of material", "bom", "assembly", "batch production", "yield"],
+      "phrases": ["assembly", "batch", "material"],
+      "errorPatterns": [],
+      "likelyCause": "The bill of materials build quantity and the component units of measure determine the yield, so a mismatch produces the wrong finished quantity or cost.",
+      "steps": [
+        "Confirm the build quantity on the bill of materials and the units of measure of each component.",
+        "Create a test assembly for the required batch and compare the component usage.",
+        "Review the resulting I/C costing entries before posting in the live company."
+      ],
+      "alreadyDonePatterns": [],
+      "links": [{ "title": "Sage Knowledgebase search: Sage 300 bill of materials assembly", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20bill%20of%20materials%20assembly" }],
+      "source": "Local knowledge base (support team)"
+    },
+    {
+      "id": "kb-gl-control-account",
+      "title": "Vendor or customer cannot be selected on a G/L control account",
+      "product": "Sage 300 Cloud",
+      "module": "gl",
+      "topicId": "gl-control-account",
+      "keywords": ["control account", "general ledger", "g/l", "vendor", "customer"],
+      "phrases": ["control", "account", "ledger"],
+      "errorPatterns": ["account is a control account"],
+      "likelyCause": "Accounts flagged as subledger control accounts only accept postings created by A/P or A/R, so direct G/L journal entries are blocked by design.",
+      "steps": [
+        "Confirm the control account flag on the G/L account.",
+        "Post the transaction through A/P or A/R instead.",
+        "Reconcile the control account to the subledger aged report."
+      ],
+      "alreadyDonePatterns": [],
+      "links": [{ "title": "Sage Knowledgebase search: Sage 300 G/L control account", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20G%2FL%20control%20account" }],
+      "source": "Local knowledge base (support team)"
+    },
+    {
+      "id": "kb-bank-reconciliation-difference",
+      "title": "Bank reconciliation is out of balance after a statement import",
+      "product": "Sage 300 Cloud",
+      "module": "bank",
+      "topicId": "bank-reconciliation",
+      "keywords": ["bank reconciliation", "ofx", "statement import", "out of balance"],
+      "phrases": ["bank", "statement", "reconciliation"],
+      "errorPatterns": ["out of balance"],
+      "likelyCause": "Duplicated or unmatched statement lines, or entries posted directly to the bank G/L account, leave the reconciliation out of balance.",
+      "steps": [
+        "Confirm the statement opening and closing balances.",
+        "List unmatched and duplicated statement entries after the import.",
+        "Look for journals posted directly to the bank G/L account."
+      ],
+      "alreadyDonePatterns": ["statement re-imported"],
+      "links": [{ "title": "Sage Knowledgebase search: Sage 300 bank reconciliation out of balance", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20bank%20reconciliation%20out%20of%20balance" }],
+      "source": "Local knowledge base (support team)"
+    },
+    {
+      "id": "kb-ic-day-end",
+      "title": "Inventory costs are missing until Day End Processing runs",
+      "product": "Sage 300 Cloud",
+      "module": "ic",
+      "topicId": "ic-day-end",
+      "keywords": ["day end", "day end processing", "costing", "audit"],
+      "phrases": ["day", "end", "costing"],
+      "errorPatterns": [],
+      "likelyCause": "Costing and audit records are only created by Day End Processing, so outstanding or failed Day End runs leave transactions without cost.",
+      "steps": [
+        "Confirm when Day End Processing last completed.",
+        "Run Day End Processing in a test copy and capture any error.",
+        "Review the I/C costing and audit reports afterwards."
+      ],
+      "alreadyDonePatterns": ["Day End Processing run"],
+      "links": [{ "title": "Sage Knowledgebase search: Sage 300 day end processing", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20day%20end%20processing" }],
+      "source": "Local knowledge base (support team)"
+    },
+    {
+      "id": "kb-third-party-compatibility",
+      "title": "Third-party product compatibility with a Sage release",
+      "module": "si",
+      "topicId": "third-party-compatibility",
+      "keywords": ["peresoft", "orchid", "technisoft", "autosimply", "compatible", "compatibility"],
+      "phrases": ["compatibility", "vendor", "version"],
+      "errorPatterns": [],
+      "likelyCause": "Compatibility between Sage and an add-on is published by the add-on vendor, so it has to be confirmed against the vendor matrix rather than assumed.",
+      "steps": [
+        "Record the exact Sage version, update level and the add-on version.",
+        "Check the vendor compatibility matrix for that combination.",
+        "Obtain written vendor confirmation before scheduling the upgrade."
+      ],
+      "alreadyDonePatterns": [],
+      "links": [{ "title": "Sage Community Hub search: third-party compatibility", "url": "https://communityhub.sage.com/search?q=third%20party%20compatibility" }],
+      "source": "Local knowledge base (support team)"
+    }
+  ]
+}
