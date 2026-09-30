@@ -83,6 +83,19 @@ test('missing webform answer falls back to ticket description, not a stale title
   assert.match(result.querySummary, /bank reconciliation/i);
 });
 
+test('conflicting product and vague control-account wording do not assert a module diagnosis', () => {
+  const people = A.analyseTicket({ product: 'Sage 300 People',
+    rawLoggedText: 'How would you best describe this query?: Bank reconciliation is out of balance after statement import.' });
+  assert.equal(people.topic.id, 'generic');
+  assert.equal(people.module.id, 'unknown');
+  assert.match(people.analysis.rootCause.content, /may conflict/i);
+  assert.doesNotMatch(people.analysis.solution.steps.join(' '), /bank services|G\/L control account/i);
+  const vague = A.analyseTicket({ product: 'Sage 300 Cloud',
+    rawLoggedText: 'How would you best describe this query?: G/L control account balance differs.' });
+  assert.equal(vague.topic.id, 'generic');
+  assert.doesNotMatch(vague.reply, /Post the transaction through the A\/P or A\/R/i);
+});
+
 test('missing summary is explicit', () => {
   assert.match(A.analyseTicket(TICKETS[7].data).summary, /No “Summary of the query”/);
 });

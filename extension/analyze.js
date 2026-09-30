@@ -521,8 +521,10 @@
   function scoreRule(rule, haystack, product, moduleId) {
     if (!rule.patterns.length) return 0;
     if (rule.product && product !== 'Sage product not specified' && rule.product !== product) return 0;
+    if (product === 'Sage 300 People' && rule.module && !['people', 'si'].includes(rule.module) && rule.id !== 'third-party-compatibility') return 0;
     if (rule.patterns.length > 1 && !rule.patterns[0].re.test(haystack)) return 0;
     if (rule.id === 'third-party-compatibility' && !rule.patterns[1].re.test(haystack)) return 0;
+    if (rule.id === 'gl-control-account' && !/journal|direct (?:g\/l|general ledger)|pick (?:a )?(?:vendor|customer)/i.test(haystack)) return 0;
     let score = 0;
     let matched = 0;
     for (const pattern of rule.patterns) {
@@ -594,6 +596,7 @@
     const product = detectProduct(ticket);
     const intent = summaryText;
     let moduleInfo = detectModule(intent);
+    const productConflict = product === 'Sage 300 People' && !['unknown', 'people', 'si'].includes(moduleInfo.id);
     const thirdParty = detectThirdParty(intent);
 
     let best = RULES[RULES.length - 1];
@@ -605,7 +608,8 @@
         bestScore = score;
       }
     });
-    if (best.id !== 'generic' && best.module && best.module !== 'unknown' && best.module !== 'si') {
+    if (best.id === 'generic') moduleInfo = { id: 'unknown', label: 'Module not identified' };
+    else if (best.module && best.module !== 'unknown' && best.module !== 'si') {
       moduleInfo = MODULES.find((module) => module.id === best.module) || moduleInfo;
       moduleInfo = { id: moduleInfo.id, label: moduleInfo.label };
     }
@@ -668,7 +672,7 @@
       analysis: {
         rootCause: {
           content: best.id === 'generic'
-            ? 'The recorded query does not provide enough evidence to identify a specific cause or module. Confirm the affected workflow before applying any module-specific guidance.'
+            ? `${productConflict ? 'The selected product and described workflow may conflict. ' : ''}The recorded query does not provide enough evidence to identify a specific cause or module. Confirm the affected workflow before applying any module-specific guidance.`
             : `Suggested area: ${best.label}. ${best.cause} This is a rules-based suggestion, not a confirmed root cause.`,
           confidence,
           evidence
