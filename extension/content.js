@@ -11,6 +11,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const ticketData = scrapeCurrentTicket();
     sendResponse({ success: true, data: ticketData });
   }
+  if (request.action === 'scrapeQueue') {
+    sendResponse({ success: true, data: scrapeQueues() });
+  }
 });
 
 /**
@@ -20,13 +23,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function scrapeCurrentTicket() {
   const ticketData = {
     ticketId: '',
+    incidentReference: '',
     subject: '',
+    outline: '',
     description: '',
+    rawLoggedText: '',
+    product: '',
+    module: '',
     customerName: '',
     customerEmail: '',
     status: '',
     priority: '',
     attachments: [],
+    actions: [],
     metadata: {}
   };
 
@@ -35,7 +44,7 @@ function scrapeCurrentTicket() {
     ticketData.ticketId =
       document.querySelector('[data-ticket-id]')?.textContent ||
       document.querySelector('.ticket-id')?.textContent ||
-      document.querySelector('h1')?.textContent?.match(/\d+/)?.()[0] ||
+      document.querySelector('h1')?.textContent?.match(/\d+/)?.[0] ||
       '';
 
     // Subject/Title
@@ -91,12 +100,109 @@ function scrapeCurrentTicket() {
     ticketData.metadata.scrapedAt = new Date().toISOString();
     ticketData.metadata.pageTitle = document.title;
 
+    // Incident reference (WF number) used on the reply and for caching
+    ticketData.incidentReference =
+      document.querySelector('[data-incident-reference]')?.textContent?.trim() ||
+      document.body.textContent?.match(/\bWF\d{4,}\b/)?.[0] ||
+      ticketData.ticketId;
+
+    // Full logged text so the analyzer can read the NetAdmin webform fields
+    ticketData.rawLoggedText = readLoggedText();
+    ticketData.outline =
+      document.querySelector('[data-ticket-outline], .ticket-outline')?.textContent?.trim() ||
+      ticketData.subject;
+    ticketData.product = readLabelledValue(/^product$/i);
+    ticketData.module = readLabelledValue(/^(module|area|category)$/i);
+    ticketData.actions = readActionHistory();
+
     console.log('[NetAdmin Assistant] Ticket scraped:', ticketData);
   } catch (error) {
     console.error('[NetAdmin Assistant] Scraping error:', error);
   }
 
   return ticketData;
+}
+
+/**
+ * Read the visible ticket detail text, which contains the NetAdmin webform
+ * questions and answers the analyzer relies on.
+ */
+function readLoggedText() {
+  const containers = document.querySelectorAll(
+    '[data-ticket-description], .ticket-description, .ticket-body, .incident-detail, .webform, form'
+  );
+  const parts = [];
+  containers.forEach((element) => {
+    const value = element.innerText || element.textContent || '';
+    if (value.trim()) parts.push(value.trim());
+  });
+  if (!parts.length) {
+    const main = document.querySelector('main') || document.body;
+    parts.push((main.innerText || main.textContent || '').trim());
+  }
+  return parts.join('\n').replace(/\n{3,}/g, '\n\n').slice(0, 20000);
+}
+
+/**
+ * Find a value rendered next to a label, which is how NetAdmin shows
+ * product, module and similar fields.
+ */
+function readLabelledValue(labelPattern) {
+  const cells = document.querySelectorAll('th, td, dt, dd, label, span');
+  for (let index = 0; index < cells.length; index += 1) {
+    const label = (cells[index].textContent || '').trim().replace(/[:*]$/, '');
+    if (!labelPattern.test(label)) continue;
+    const next = cells[index].nextElementSibling;
+    const value = (next && (next.textContent || '').trim()) || '';
+    if (value) return value.slice(0, 200);
+  }
+  return '';
+}
+
+/** Read the action / note history already displayed on the ticket. */
+function readActionHistory() {
+  const rows = document.querySelectorAll('[data-action-row], .action-row, .ticket-action, .note');
+  const actions = [];
+  rows.forEach((row) => {
+    const description = (row.innerText || row.textContent || '').trim();
+    if (!description) return;
+    actions.push({
+      actionType: row.getAttribute('data-action-type') || '',
+      actionDescription: description.slice(0, 4000),
+      date: row.getAttribute('data-action-date') || ''
+    });
+  });
+  return actions.slice(0, 50);
+}
+
+/**
+ * Read the open and completed queues that the signed-in agent can already see.
+ * Completed tickets feed the local, anonymised past-ticket learning.
+ */
+function scrapeQueues() {
+  const readRows = (selector) => {
+    const rows = Array.from(document.querySelectorAll(selector));
+    return rows.map((row) => {
+      const cells = Array.from(row.querySelectorAll('td')).map((cell) => (cell.textContent || '').trim());
+      const rowText = (row.innerText || row.textContent || '').trim();
+      return {
+        incidentReference: rowText.match(/\bWF\d{4,}\b/)?.[0] || cells[0] || '',
+        outline: cells[1] || rowText.slice(0, 200),
+        summary: cells[1] || rowText.slice(0, 200),
+        stage: row.getAttribute('data-stage') || cells[2] || '',
+        priority: row.getAttribute('data-priority') || cells[3] || '',
+        closedDate: row.getAttribute('data-closed-date') || '',
+        resolution: row.getAttribute('data-resolution') || '',
+        actions: []
+      };
+    }).filter((item) => item.incidentReference || item.outline);
+  };
+
+  return {
+    open: readRows('[data-queue="open"] tr, .queue-open tr, table.queue tbody tr').slice(0, 100),
+    completed: readRows('[data-queue="completed"] tr, .queue-completed tr').slice(0, 100),
+    scrapedAt: new Date().toISOString()
+  };
 }
 
 /**

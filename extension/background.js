@@ -1,210 +1,189 @@
 /**
  * Background Service Worker
- * Handles extension initialization and message routing
+ * Handles extension initialization and message routing.
+ *
+ * All ticket analysis is performed locally by the rules engine. There is no
+ * backend server, no API key and no AI provider.
  */
 
-const API_BASE_URL = 'http://localhost:3000';
+importScripts('analyze.js', 'knowledge.js', 'history.js', 'sage-sources.js');
+
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+const DEFAULT_SETTINGS = {
+  showConfidence: true,
+  cacheEnabled: true,
+  maxCacheAge: CACHE_DURATION,
+  liveSourcesEnabled: false,
+  learnFromCompleted: true
+};
 
 // Initialize storage on install
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('[NetAdmin Assistant] Extension installed/updated');
-  
-  // Set default storage values
-  chrome.storage.local.set({
-    apiUrl: API_BASE_URL,
-    analysisCache: {},
-    settings: {
-      autoAnalyze: true,
-      showConfidence: true,
-      cacheEnabled: true,
-      maxCacheAge: CACHE_DURATION
-    }
-  });
 
-  // Check backend health
-  checkBackendHealth();
+  const stored = await storageGet(['settings']);
+  chrome.storage.local.set({
+    analysisCache: {},
+    settings: Object.assign({}, DEFAULT_SETTINGS, stored.settings || {})
+  });
 });
 
-/**
- * Check if backend is healthy
- */
-async function checkBackendHealth() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/health`, { timeout: 5000 });
-    if (response.ok) {
-      console.log('[NetAdmin Assistant] Backend is healthy');
-      chrome.storage.local.set({ backendStatus: 'healthy' });
-    }
-  } catch (error) {
-    console.warn('[NetAdmin Assistant] Backend not available:', error.message);
-    chrome.storage.local.set({ backendStatus: 'unavailable' });
-  }
-}
+chrome.action.onClicked?.addListener((tab) => {
+  if (tab?.id) chrome.sidePanel?.open({ tabId: tab.id }).catch(console.error);
+});
 
 /**
  * Message listener - handle requests from content/popup/sidepanel
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[NetAdmin Assistant] Message received:', request.action);
-
   switch (request.action) {
     case 'analyze':
       handleAnalyze(request.data, sendResponse);
       return true; // Keep channel open for async
 
+    case 'chat':
+      handleChat(request, sendResponse);
+      return true;
+
+    case 'learnCompleted':
+      NetAdminHistory.learnFromCompleted(request.data || [])
+        .then((records) => sendResponse({ success: true, count: records.length }))
+        .catch((error) => sendResponse({ success: false, error: error.message }));
+      return true;
+
+    case 'resetHistory':
+      NetAdminHistory.resetHistory().then(() => sendResponse({ success: true }));
+      return true;
+
     case 'getHistory':
-      handleGetHistory(request.data, sendResponse);
+      NetAdminHistory.loadHistory().then((records) => sendResponse({ success: true, data: records }));
+      return true;
+
+    case 'fetchSources':
+      handleFetchSources(request.data || {}, sendResponse);
       return true;
 
     case 'getSettings':
-      chrome.storage.local.get('settings', (result) => {
-        sendResponse({ success: true, settings: result.settings });
-      });
-      break;
+      storageGet(['settings']).then((data) =>
+        sendResponse({ success: true, settings: Object.assign({}, DEFAULT_SETTINGS, data.settings || {}) })
+      );
+      return true;
 
     case 'saveSettings':
-      chrome.storage.local.set({ settings: request.data }, () => {
+      chrome.storage.local.set({ settings: Object.assign({}, DEFAULT_SETTINGS, request.data || {}) }, () => {
         sendResponse({ success: true });
       });
-      break;
+      return true;
 
     case 'clearCache':
-      chrome.storage.local.set({ analysisCache: {} }, () => {
-        sendResponse({ success: true });
-      });
-      break;
+      chrome.storage.local.set({ analysisCache: {} }, () => sendResponse({ success: true }));
+      return true;
 
-    case 'checkBackend':
-      checkBackendHealth();
-      sendResponse({ success: true });
-      break;
+    case 'openSidePanel': {
+      const tabId = sender.tab?.id;
+      if (tabId) chrome.sidePanel?.open({ tabId }).catch(console.error);
+      sendResponse({ success: Boolean(tabId) });
+      return false;
+    }
 
     default:
       sendResponse({ error: 'Unknown action' });
+      return false;
   }
 });
 
 /**
- * Handle ticket analysis request
+ * Handle ticket analysis request using the offline rules engine.
  */
 async function handleAnalyze(data, sendResponse) {
+  const started = Date.now();
   try {
-    const { ticketId, subject, description, attachments } = data;
+    const ticket = data || {};
+    const cacheKey = ticket.incidentReference || ticket.ticketId || '';
 
-    // Check cache first
-    const cached = await getCachedAnalysis(ticketId);
+    const cached = await getCachedAnalysis(cacheKey);
     if (cached) {
-      console.log('[NetAdmin Assistant] Returning cached analysis for:', ticketId);
       sendResponse({ success: true, data: cached, fromCache: true });
       return;
     }
 
-    console.log('[NetAdmin Assistant] Analyzing ticket:', ticketId);
+    const [knowledge, history] = await Promise.all([
+      NetAdminKnowledge.loadKnowledge(),
+      NetAdminHistory.loadHistory()
+    ]);
 
-    const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        ticketId,
-        subject,
-        description,
-        attachments: attachments || []
-      }),
-      timeout: 60000
-    });
+    const result = NetAdminAnalyzer.analyseTicket(ticket, { knowledge, history });
+    const payload = Object.assign({}, result, { duration: Date.now() - started, engine: 'Offline rules analysis' });
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status} ${response.statusText}`);
-    }
-
-    const result = await response.json();
-
-    if (result.success) {
-      // Cache the result
-      await cacheAnalysis(ticketId, result);
-      sendResponse({ success: true, data: result, fromCache: false });
-    } else {
-      sendResponse({ success: false, error: result.error || 'Analysis failed' });
-    }
+    if (cacheKey) await cacheAnalysis(cacheKey, payload);
+    sendResponse({ success: true, data: payload, fromCache: false });
   } catch (error) {
     console.error('[NetAdmin Assistant] Analysis error:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
 
-/**
- * Handle history retrieval
- */
-async function handleGetHistory(data, sendResponse) {
+/** Scoped offline support chat. */
+async function handleChat(request, sendResponse) {
   try {
-    const { limit = 20, offset = 0 } = data;
-
-    const response = await fetch(
-      `${API_BASE_URL}/api/history/tickets?limit=${limit}&offset=${offset}`,
-      { timeout: 10000 }
-    );
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    sendResponse({ success: true, data: result });
+    const knowledge = await NetAdminKnowledge.loadKnowledge();
+    sendResponse({ success: true, reply: NetAdminAnalyzer.chat(request.message, request.data || {}, { knowledge }) });
   } catch (error) {
-    console.error('[NetAdmin Assistant] History retrieval error:', error);
     sendResponse({ success: false, error: error.message });
   }
+}
+
+/**
+ * Optional live retrieval from the official Sage Knowledgebase and Community
+ * Hub. Disabled unless the user switches it on, and failures are reported
+ * rather than hidden so the pre-filled search links remain the fallback.
+ */
+async function handleFetchSources(data, sendResponse) {
+  try {
+    const stored = await storageGet(['settings']);
+    const settings = Object.assign({}, DEFAULT_SETTINGS, stored.settings || {});
+    if (!settings.liveSourcesEnabled) {
+      sendResponse({ success: true, data: { enabled: false, results: [], unavailable: [] } });
+      return;
+    }
+    const result = await NetAdminSources.fetchSageSources(data);
+    sendResponse({ success: true, data: result });
+  } catch (error) {
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+function storageGet(keys) {
+  return new Promise((resolve) => chrome.storage.local.get(keys, (data) => resolve(data || {})));
 }
 
 /**
  * Cache analysis result
  */
 async function cacheAnalysis(ticketId, result) {
-  return new Promise((resolve) => {
-    chrome.storage.local.get('analysisCache', (data) => {
-      const cache = data.analysisCache || {};
-      cache[ticketId] = {
-        data: result,
-        timestamp: Date.now()
-      };
-      chrome.storage.local.set({ analysisCache: cache }, resolve);
-    });
-  });
+  const data = await storageGet(['analysisCache']);
+  const cache = data.analysisCache || {};
+  cache[ticketId] = { data: result, timestamp: Date.now() };
+  return new Promise((resolve) => chrome.storage.local.set({ analysisCache: cache }, resolve));
 }
 
 /**
  * Retrieve cached analysis
  */
 async function getCachedAnalysis(ticketId) {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['analysisCache', 'settings'], (data) => {
-      const cache = data.analysisCache || {};
-      const settings = data.settings || {};
+  if (!ticketId) return null;
+  const data = await storageGet(['analysisCache', 'settings']);
+  const settings = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
+  if (!settings.cacheEnabled) return null;
 
-      if (!settings.cacheEnabled) {
-        resolve(null);
-        return;
-      }
+  const cache = data.analysisCache || {};
+  const cached = cache[ticketId];
+  if (!cached) return null;
 
-      const cached = cache[ticketId];
-      if (cached) {
-        const age = Date.now() - cached.timestamp;
-        if (age < (settings.maxCacheAge || CACHE_DURATION)) {
-          resolve(cached.data);
-          return;
-        }
-        // Expired cache
-        delete cache[ticketId];
-        chrome.storage.local.set({ analysisCache: cache });
-      }
+  if (Date.now() - cached.timestamp < (settings.maxCacheAge || CACHE_DURATION)) return cached.data;
 
-      resolve(null);
-    });
-  });
+  delete cache[ticketId];
+  chrome.storage.local.set({ analysisCache: cache });
+  return null;
 }
-
-// Periodic health check (every 5 minutes)
-setInterval(checkBackendHealth, 5 * 60 * 1000);
