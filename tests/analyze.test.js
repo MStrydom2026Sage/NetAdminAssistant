@@ -44,7 +44,9 @@ test('search phrase removes codes', () => {
 });
 test('scoped chat rejects unrelated requests', () => {
   assert.match(A.chat('Write a poem about the sea'), /only help with Sage and IT support/i);
+  assert.match(A.chat('Write a poem about Sage'), /only help with Sage and IT support/i);
   assert.match(A.chat('How to reconcile bank?', TICKETS[4].data), /Bank reconciliation/);
+  assert.match(A.chat('How to reconcile bank?', TICKETS[0].data), /Bank reconciliation/);
   assert.match(A.chat('reply to customer', TICKETS[0].data), /Kind regards/);
   assert.equal(A.chat('How to reconcile bank?', TICKETS[4].data), A.chat('How to reconcile bank?', TICKETS[4].data));
 });

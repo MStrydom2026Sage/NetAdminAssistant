@@ -10,7 +10,7 @@
       steps: ['Confirm the bill of materials units and component quantities for the desired batch yield.', 'Set up a test assembly and verify component consumption and finished-goods quantity.', 'Review costing and post only after validating the test results.'] },
     { id: 'tax-tables', label: 'People tax / PAYE', match: /\b(paye|employee tax|tax table|tax difference|company rule)\b/i, mode: 'guide',
       steps: ['Confirm the applicable tax tables were imported for the payroll period.', 'Run Company Rule recalculation in a test environment and compare the tax result.', 'Compare taxable earnings, deductions and year-to-date values for both periods.'] },
-    { id: 'bank-reconcile', label: 'Bank reconciliation', match: /\b(bank reconcil|ofx|bank statement.*out of balance)\b/i, mode: 'guide',
+    { id: 'bank-reconcile', label: 'Bank reconciliation', match: /\b(bank reconcil|reconcil\w* bank|ofx|bank statement.*out of balance)\b/i, mode: 'guide',
       steps: ['Confirm the bank statement opening and closing balances.', 'Compare imported transactions and unmatched items with the ledger.', 'Investigate the difference before posting any adjustment.'] },
     { id: 'ess-mobile', label: 'ESS mobile registration', match: /\b(ess|self service|mobile app|qr code)\b/i, mode: 'guide',
       steps: ['Confirm the employee is active and has the correct self-service access.', 'Generate a fresh registration QR code and check device date and time.', 'Retry registration and capture the exact error if it persists.'] },
@@ -93,12 +93,15 @@
   function chat(message, ticket = {}) {
     const question = text(message);
     if (!question) return 'Ask a Sage or IT support question about this ticket.';
-    if (!/\b(sage|people|paye|tax|payroll|bom|bill of material|bank|reconcil|ledger|g\/l|ess|mobile|qr|ticket|attachment|error|install|permission|network|printer|backup|support|steps|solution|reply|customer|peresoft|compatib)/i.test(question)) {
+    if (/\b(poem|recipe|weather|sports|movie|joke|politic|plant|gardening)\b/i.test(question)
+      || !/\b(sage|people|paye|tax|payroll|bom|bill of material|bank|reconcil|ledger|g\/l|ess|mobile|qr|ticket|attachment|error|install|permission|network|printer|backup|support|steps|solution|reply|customer|peresoft|compatib)/i.test(question)) {
       return 'I can only help with Sage and IT support tickets using offline rules.';
     }
-    const context = analyseTicket({ ...ticket, subject: question, description: question + ' ' + text(ticket.description) });
-    if (/\b(reply|respond|customer)\b/i.test(question)) return context.reply;
-    if (/\b(attachment|evidence)\b/i.test(question)) return context.analysis.rootCause.evidence.join('; ') || 'No attachment names were captured for this ticket.';
+    const current = analyseTicket(ticket);
+    if (/\b(reply|respond|customer)\b/i.test(question)) return current.reply;
+    if (/\b(attachment|evidence)\b/i.test(question)) return current.analysis.rootCause.evidence.join('; ') || 'No attachment names were captured for this ticket.';
+    const prompted = analyseTicket({ ...ticket, rawLoggedText: '', actions: [], subject: question, description: question });
+    const context = prompted.topic.id === 'generic' ? current : prompted;
     return `${context.topic.label}: ${context.topic.steps.join(' ')} These are suggested checks, not a confirmed diagnosis.`;
   }
 
