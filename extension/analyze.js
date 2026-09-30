@@ -431,18 +431,63 @@
       ]
     },
     {
+      id: 'printing-output',
+      label: 'Report printing and print destination',
+      mode: 'guide',
+      patterns: [
+        { re: /(?:does\s*n(?:o|')t|will not|won'?t|cannot|can'?t|unable to|fails? to|not)\s+print|no(?:t)? printing|print(?:ing)?\s+(?:error|fail\w*|problem|issue)|nothing prints|blank (?:print|page)/i, weight: 8 },
+        { re: /report|invoice|statement|remittance|payslip|cheque|document|printer|spool/i, weight: 3 }
+      ],
+      cause: 'A document that will not print usually fails at the print destination, the printer or the report layout rather than in the accounting data, so the failure point has to be isolated first.',
+      steps: [
+        'Confirm the exact report or document name, the company and the selection criteria used when it does not print.',
+        'Check the Print Destination in Sage (Printer, Preview, File, E-mail or Schedule) and confirm Preview shows the document.',
+        'Print the same selection to a different printer and to PDF, so a printer or driver fault is separated from a Sage layout fault.',
+        'Confirm whether the report is a standard Sage layout or a customised one, and whether another workstation or Windows user can print it.',
+        'Capture the exact on-screen message, or note that it fails silently, together with a screenshot of the print destination settings.'
+      ]
+    },
+    {
+      id: 'posting-errors',
+      label: 'Batch posting error',
+      mode: 'guide',
+      patterns: [
+        { re: /(?:cannot|can'?t|unable to|will not|won'?t|fails? to|error (?:when|while|on))\s*post\w*|post(?:ing)?\s+(?:error|fail\w*|problem|rejected)|batch (?:is )?(?:stuck|in error)/i, weight: 7 },
+        { re: /batch|journal|invoice|entry|transaction|period/i, weight: 2 }
+      ],
+      cause: 'Posting failures are reported on the posting journal or error report for the batch, and usually trace back to the batch status, the fiscal period or a setup value on one of the entries.',
+      steps: [
+        'Capture the exact posting error message and the batch number, batch date and module it was posted from.',
+        'Print or view the posting journal / posting error report for that batch and note the entries listed on it.',
+        'Confirm the fiscal year and period for the batch date are open in Common Services, and that the batch is Open rather than Ready to Post or already posted.',
+        'Correct only the entries named on the posting error report in a copy of the data first, then re-post and compare the result.'
+      ]
+    },
+    {
+      id: 'language-installation',
+      label: 'Language / localisation installation',
+      mode: 'search',
+      patterns: [
+        { re: /french|fran[cç]ais|spanish|language pack|multi[- ]?language|langue|localis(?:ation|ed)|localiz(?:ation|ed)/i, weight: 6 },
+        { re: /install\w*|setup|activat\w*|licen[cs]\w*|switch|change|display|version|upgrade/i, weight: 3 }
+      ],
+      cause: 'Which languages can be installed and displayed is determined by the Sage release, the installed language components and the licence, so the entitlement and the installed version have to be confirmed before anything is installed.',
+      steps: [
+        'Confirm the exact Sage product, version and update (PU) level currently installed, and whether the request is for the program interface language or for regional/localisation settings.',
+        'Confirm on the customer licence which languages are included, because the language selection only offers what the installation and licence allow.',
+        'Check the installed language components in the Sage installation (add or remove program features) before downloading anything new.',
+        'Confirm on the official Sage download/installation material for that exact version that the language is supported, and quote the source on the ticket.',
+        'Test the language change on one workstation or in a test company before rolling it out.'
+      ]
+    },
+    {
       id: 'generic',
       label: 'General troubleshooting',
       module: 'unknown',
       mode: 'search',
       patterns: [],
       cause: 'There is not enough evidence in the ticket to classify the query, so the details need to be confirmed before any change is suggested.',
-      steps: [
-        'Confirm the product, version and the exact error message or expected result.',
-        'Reproduce the issue in a safe test environment and record the steps followed.',
-        'Collect screenshots or logs and confirm when the behaviour started.',
-        'Check the Sage documentation for the affected area or escalate with the sanitised evidence.'
-      ]
+      steps: []
     }
   ];
 
@@ -497,21 +542,187 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Ticket facts, missing-context questions and sourced guidance
+   * ------------------------------------------------------------------ */
+
+  /** Short, sanitised quote of the recorded query, used inside questions. */
+  function shortQuote(value, words) {
+    const cleaned = stripSiteCodes(value).replace(/\s+/g, ' ').replace(/^[\s"“”']+|[\s"“”']+$/g, '');
+    if (!cleaned) return '';
+    const parts = cleaned.split(' ');
+    const limit = words || 14;
+    return parts.length <= limit ? cleaned : `${parts.slice(0, limit).join(' ')}…`;
+  }
+
+  /**
+   * Facts taken verbatim from the ticket. Nothing here is inferred, so the
+   * reader can tell ticket evidence apart from a rules-based hypothesis.
+   */
+  function buildTicketFacts(context) {
+    const { fields, question, questionSource, product, errorCodes, attempted, thirdParty } = context;
+    const facts = [];
+    const recorded = question || fields.summary || context.summaryText;
+    facts.push(recorded
+      ? `${questionSource}: ${stripSiteCodes(recorded)}`
+      : 'No answer to “How would you best describe this query?” is recorded on the ticket.');
+    facts.push(product === 'Sage product not specified'
+      ? 'No Sage product is recorded on the ticket.'
+      : `Product recorded on the ticket: ${product}.`);
+    if (fields.version) facts.push(`Version recorded on the ticket: ${stripSiteCodes(fields.version)}`);
+    if (fields.errorMessage) facts.push(`Error message recorded on the ticket: ${stripSiteCodes(fields.errorMessage)}`);
+    if (errorCodes.length) facts.push(`Error code quoted in the query: ${errorCodes.join(', ')}`);
+    if (fields.stepsToReplicate) facts.push(`Steps to replicate recorded: ${stripSiteCodes(fields.stepsToReplicate)}`);
+    if (attempted.length) facts.push(`Already reported as done, do not repeat: ${attempted.map((item) => item.label).join('; ')}.`);
+    if (thirdParty.products.length) facts.push(`Third-party product named in the query: ${thirdParty.products.join(', ')}.`);
+    return facts;
+  }
+
+  /**
+   * Precise questions built from what this specific query does not say.
+   * They replace the old generic "confirm the product, reproduce, collect logs"
+   * boilerplate, which was offered even when it answered nothing.
+   */
+  function buildQuestions(context) {
+    const { fields, question, product, errorCodes, attempted } = context;
+    const recorded = question || fields.summary || context.summaryText;
+    const quote = shortQuote(recorded);
+    const questions = [];
+    if (!quote) {
+      questions.push('The ticket records no answer to “How would you best describe this query?”. Ask the customer what they were doing, what happened and what they expected to happen.');
+      questions.push('Ask which Sage product, version and update level is affected, and which screen or report the query is about.');
+      return questions;
+    }
+    if (product === 'Sage product not specified') {
+      questions.push(`Ask which Sage product, version and update level applies to “${quote}”; the ticket does not record it.`);
+    }
+    if (/error|fail|cannot|can'?t|unable|does ?n(?:o|')t|not work|problem|issue|reject/i.test(recorded) && !fields.errorMessage && !errorCodes.length) {
+      questions.push(`Ask for the exact on-screen message, or a screenshot, shown when “${quote}”.`);
+    }
+    if (!fields.stepsToReplicate) {
+      questions.push(`Ask for the screen, menu path and steps followed when “${quote}”.`);
+    }
+    if (!fields.resolutionsAttempted && !attempted.length) {
+      questions.push('Ask what has already been tried for this query and what the result of each attempt was.');
+    }
+    questions.push(`Ask whether “${quote}” affects one user, one workstation or everyone, and when it last worked.`);
+    return questions.slice(0, 5);
+  }
+
+  /**
+   * Guidance that can be attributed to a source: curated local entries and,
+   * when live retrieval is enabled, the official Sage results that actually
+   * matched. Retrieved results contribute a cited title and extract only —
+   * article steps are never invented from a title.
+   */
+  function buildSourcedGuidance(knowledge, sources) {
+    const items = [];
+    (knowledge || []).forEach((entry) => {
+      items.push({
+        kind: 'local',
+        title: text(entry.title),
+        source: text(entry.source) || 'Local knowledge base',
+        url: entry.links && entry.links.length ? text(entry.links[0].url) : '',
+        steps: (entry.steps || []).slice(),
+        detail: 'Curated local entry. Confirm it against the official Sage material before advising a change.'
+      });
+    });
+    if (sources && sources.enabled !== false && Array.isArray(sources.results)) {
+      sources.results.slice(0, 3).forEach((result) => {
+        const title = text(result && result.title);
+        const url = text(result && result.url);
+        if (!title || !/^https:\/\//i.test(url)) return;
+        const snippet = text(result.snippet);
+        items.push({
+          kind: 'retrieved',
+          title,
+          source: text(result.source) || 'Official Sage source',
+          url,
+          snippet,
+          articleId: text(result.articleId),
+          steps: [],
+          detail: snippet
+            ? 'Retrieved title and extract only. Open the article and confirm its instructions before advising the customer.'
+            : 'Retrieved title only. Open the article and confirm its content before advising the customer.'
+        });
+      });
+    }
+    return items;
+  }
+
+  /** Describe whether official Sage retrieval produced anything usable. */
+  function describeSourceState(sources) {
+    if (!sources || sources.enabled === false) {
+      return {
+        enabled: false,
+        available: false,
+        unavailable: [],
+        message: 'Live Sage retrieval is switched off, so no official Sage article has been read for this ticket.'
+      };
+    }
+    const unavailable = (sources.unavailable || [])
+      .map((item) => (typeof item === 'string'
+        ? { name: item, reason: '' }
+        : { name: text(item && item.name), reason: text(item && item.reason) }))
+      .filter((item) => item.name);
+    const matched = Array.isArray(sources.results) ? sources.results.length : 0;
+    const listed = unavailable.map((item) => (item.reason ? `${item.name} — ${item.reason}` : item.name)).join('; ');
+    return {
+      enabled: true,
+      available: matched > 0,
+      unavailable,
+      message: matched
+        ? `${matched} official Sage result${matched === 1 ? '' : 's'} matched this query${listed ? `; unavailable: ${listed}` : ''}.`
+        : `No official Sage result matched this query${listed ? `; unavailable: ${listed}` : ''}.`
+    };
+  }
+
+  /* ------------------------------------------------------------------ *
    * Resource links
    * ------------------------------------------------------------------ */
 
+  // The Sage Knowledgebase search endpoint that used to be pre-filled
+  // (/portal/app/portlets/results/viewsearch.jsp) now returns
+  // "HTTP Status 404 – Not Found", and no replacement query endpoint could be
+  // verified from this environment. Rather than sending the agent to a broken
+  // URL, the Knowledgebase is offered as its home page (search on the site) and
+  // as a clearly labelled site-restricted Google search that the agent clicks
+  // itself. Google is never read automatically.
   const SOURCE_LINKS = [
-    { id: 'kb-za', name: 'Sage Knowledgebase (ZA)', template: 'https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=' },
-    { id: 'kb-us', name: 'Sage Knowledgebase (US)', template: 'https://us-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=' },
-    { id: 'community', name: 'Sage Community Hub', template: 'https://communityhub.sage.com/search?q=' },
-    { id: 'google', name: 'Google (opens in a new tab)', template: 'https://www.google.com/search?q=' }
+    {
+      id: 'kb-za',
+      name: 'Sage Knowledgebase (ZA) home',
+      url: 'https://za-kb.sage.com/',
+      kind: 'home',
+      note: 'The Knowledgebase search cannot be pre-filled; open the site and search for the phrase above.'
+    },
+    {
+      id: 'kb-us',
+      name: 'Sage Knowledgebase (US) home',
+      url: 'https://us-kb.sage.com/',
+      kind: 'home',
+      note: 'The Knowledgebase search cannot be pre-filled; open the site and search for the phrase above.'
+    },
+    {
+      id: 'kb-site-search',
+      name: 'Sage Knowledgebase via Google site search (manual click-through)',
+      template: 'https://www.google.com/search?q=',
+      site: 'site:za-kb.sage.com OR site:us-kb.sage.com',
+      kind: 'manual',
+      note: 'Opens Google restricted to the Sage Knowledgebase sites. Nothing is retrieved automatically.'
+    },
+    { id: 'community', name: 'Sage Community Hub', template: 'https://communityhub.sage.com/search?q=', kind: 'search' },
+    { id: 'google', name: 'Google (opens in a new tab)', template: 'https://www.google.com/search?q=', kind: 'manual', note: 'Manual click-through only; Google is never read automatically.' }
   ];
 
-  /** Build the pre-filled search links for a query. */
+  /** Build the search links for a query, flagging which ones are pre-filled. */
   function buildResourceLinks(query, product) {
     const phrase = [product && product !== 'Sage product not specified' ? product : 'Sage', query].filter(Boolean).join(' ').trim();
-    const encoded = encodeURIComponent(phrase);
-    return SOURCE_LINKS.map((source) => ({ id: source.id, title: `${source.name}: ${phrase}`, name: source.name, url: `${source.template}${encoded}` }));
+    return SOURCE_LINKS.map((source) => {
+      const searchPhrase = source.site ? `${source.site} ${phrase}` : phrase;
+      const url = source.template ? `${source.template}${encodeURIComponent(searchPhrase)}` : source.url;
+      const title = source.kind === 'home' ? `${source.name} — search for “${phrase}” on the site` : `${source.name}: ${phrase}`;
+      return { id: source.id, title, name: source.name, url, kind: source.kind, note: text(source.note) };
+    });
   }
 
   /* ------------------------------------------------------------------ *
@@ -548,30 +759,82 @@
     return name.replace(/[\r\n<>]/g, '').split(' ')[0] || 'there';
   }
 
-  function buildReply(context) {
-    const { ticket, topic, product, attempted, summary } = context;
-    const reference = text(ticket.incidentReference) || text(ticket.ticketId) || 'your ticket';
+  // The panel lists the questions for the consultant ("Ask ..."); the draft
+  // reply has to put the same question to the customer.
+  const CUSTOMER_PHRASING = [
+    [/^The ticket records no answer[\s\S]*$/i, 'Please describe what you were doing, what happened and what you expected to happen.'],
+    [/^Ask the customer to /i, 'Please '],
+    [/^Ask for /i, 'Please send us '],
+    [/^Ask what /i, 'Please tell us what '],
+    [/^Ask whether /i, 'Please confirm whether '],
+    [/^Ask which /i, 'Please confirm which ']
+  ];
+
+  function customerPhrasing(question) {
+    const value = text(question);
+    for (const [pattern, replacement] of CUSTOMER_PHRASING) {
+      if (pattern.test(value)) return value.replace(pattern, replacement);
+    }
+    return value;
+  }
+
+  function buildReply(context, guidance, sourceState) {
+    const { name, reference, summaryLine, areaLine, attemptedLine, steps, questions, mode } = context;
+    const items = Array.isArray(guidance) ? guidance.filter((item) => item.kind === 'retrieved') : [];
     const lines = [];
-    lines.push(`Good day ${safeName(ticket)}`);
+    lines.push(`Good day ${name}`);
     lines.push('');
     lines.push(`Thank you for logging ${reference}.`);
-    if (summary && !/^No “Summary/.test(summary)) lines.push(`Our understanding of your query: ${stripSiteCodes(summary)}`);
-    lines.push(topic.id === 'generic'
-      ? 'We cannot yet identify a specific cause or module from the recorded query.'
-      : `A possible area to check is ${topic.label.toLowerCase()}${product === 'Sage product not specified' ? '' : ` in ${product}`}; this is not a confirmed diagnosis.`);
-    if (attempted.length) lines.push(`We can see the following has already been done, so we will not ask you to repeat it: ${attempted.map((item) => item.label).join('; ')}.`);
-    if (topic.steps.length) {
+    if (summaryLine) lines.push(`Our understanding of your query: ${summaryLine}`);
+    lines.push(areaLine);
+    if (attemptedLine) lines.push(attemptedLine);
+    if (steps.length) {
       lines.push('');
-      lines.push('Our suggested next steps are:');
-      topic.steps.forEach((step, index) => lines.push(`${index + 1}. ${step}`));
+      lines.push('Based on the query as recorded, the checks we suggest are:');
+      steps.forEach((step, index) => lines.push(`${index + 1}. ${step}`));
+    }
+    if (questions.length) {
+      lines.push('');
+      lines.push(steps.length
+        ? 'To confirm this we still need the following from you:'
+        : 'We do not yet have a validated step for this query, so we first need the following from you:');
+      questions.forEach((question) => lines.push(`- ${customerPhrasing(question)}`));
+    }
+    if (items.length) {
+      lines.push('');
+      lines.push('Official Sage material that matches your query (we will confirm the detail in the article before advising a change):');
+      items.forEach((item) => lines.push(`- ${item.title} (${item.source}): ${item.url}`));
+    } else if (sourceState && sourceState.enabled && !sourceState.available) {
+      lines.push('');
+      lines.push('No official Sage article could be matched to this query at the moment, so the checks above come from the recorded query and our local support rules only.');
     }
     lines.push('');
-    lines.push(topic.resourceMode === 'search'
+    lines.push(mode === 'search'
       ? 'These are suggested checks based on the information logged. We will confirm the documented answer before advising a change.'
       : 'These are suggested checks based on the information logged, and we will confirm the outcome with you before any change is made in your live data.');
     lines.push('');
     lines.push('Kind regards');
     return lines.join('\n');
+  }
+
+  /**
+   * Re-apply live Sage retrieval to a completed analysis.
+   * Pure and idempotent, so the side panel can call it again after every
+   * refresh and the panel and the draft reply always agree, including when
+   * retrieval is switched off or unavailable.
+   */
+  function applySources(result, sources) {
+    if (!result || typeof result !== 'object' || !result.replyContext) return result;
+    const guidance = buildSourcedGuidance(result.knowledge, sources);
+    const state = describeSourceState(sources);
+    return Object.assign({}, result, {
+      sourcedGuidance: guidance,
+      sourceState: state,
+      reply: buildReply(result.replyContext, guidance, state),
+      analysis: Object.assign({}, result.analysis, {
+        solution: Object.assign({}, result.analysis.solution, { sourcedGuidance: guidance, sourceState: state })
+      })
+    });
   }
 
   /* ------------------------------------------------------------------ *
@@ -615,19 +878,26 @@
     }
 
     const attempted = detectAlreadyAttempted(ticket);
-    let steps = pruneSteps(best.steps, attempted);
+    let ruleSteps = pruneSteps(best.steps, attempted);
     if (thirdParty.products.length && best.id !== 'third-party-compatibility') {
-      steps = steps.concat(`Confirm the supported version of ${thirdParty.products[0]} for this Sage release with the vendor before changing anything.`);
+      ruleSteps = ruleSteps.concat(`Confirm the supported version of ${thirdParty.products[0]} for this Sage release with the vendor before changing anything.`);
     }
-    const stepList = attempted.length
-      ? [`Already reported as done, do not repeat: ${attempted.map((item) => item.label).join('; ')}.`].concat(steps)
-      : steps.slice();
+
+    const errorCodes = extractErrorCodes(intent);
+    const factContext = { fields, question, questionSource, summaryText, product, errorCodes, attempted, thirdParty };
+    const facts = buildTicketFacts(factContext);
+    const questions = buildQuestions(factContext);
+    const hypotheses = ruleSteps.map((step) => ({ text: step, source: `Local rule: ${best.label}` }));
+    // Without a matched rule there is no validated step, so the panel and the
+    // reply ask for the missing context instead of repeating boilerplate.
+    const stepList = hypotheses.length ? hypotheses.map((item) => item.text) : questions.slice();
 
     const query = buildSearchPhrase(intent) || 'Sage support';
     const links = buildResourceLinks(query, product);
 
     const knowledge = matchKnowledge(options.knowledge || [], { haystack: intent, product, moduleId: moduleInfo.id, topicId: best.id });
-    const similar = rankSimilarTickets({ haystack: intent, product, moduleId: moduleInfo.id, topicId: best.id }, options.history || []);
+    const guidance = buildSourcedGuidance(knowledge, options.sources);
+    const sourceState = describeSourceState(options.sources);
 
     const evidence = [];
     if (question) evidence.push(`${questionSource}: ${stripSiteCodes(question)}`);
@@ -635,7 +905,6 @@
     if (fields.stepsToReplicate) evidence.push(`Steps to replicate: ${stripSiteCodes(fields.stepsToReplicate)}`);
     if (fields.resolutionsAttempted) evidence.push(`Resolutions attempted: ${stripSiteCodes(fields.resolutionsAttempted)}`);
     if (thirdParty.products.length) evidence.push(`Third-party product mentioned: ${thirdParty.products.join(', ')}`);
-    const errorCodes = extractErrorCodes(intent);
     if (errorCodes.length) evidence.push(`Error code in query: ${errorCodes.join(', ')}`);
     (ticket.attachments || []).forEach((attachment) => {
       const name = text(typeof attachment === 'string' ? attachment : attachment && attachment.name);
@@ -654,6 +923,21 @@
 
     const confidence = best.id === 'generic' ? 0.3 : Math.min(0.85, 0.45 + bestScore * 0.04);
 
+    const replyContext = {
+      name: safeName(ticket),
+      reference: text(ticket.incidentReference) || text(ticket.ticketId) || 'your ticket',
+      summaryLine: summary && !/^No \u201CSummary/.test(summary) ? stripSiteCodes(summary) : '',
+      areaLine: best.id === 'generic'
+        ? 'We cannot yet identify a specific cause or module from the recorded query.'
+        : `A possible area to check is ${best.label.toLowerCase()}${product === 'Sage product not specified' ? '' : ` in ${product}`}; this is not a confirmed diagnosis.`,
+      attemptedLine: attempted.length
+        ? `We can see the following has already been done, so we will not ask you to repeat it: ${attempted.map((item) => item.label).join('; ')}.`
+        : '',
+      steps: hypotheses.map((item) => item.text),
+      questions: hypotheses.length ? questions.slice(0, 3) : questions.slice(),
+      mode: best.mode
+    };
+
     return {
       ticketId: text(ticket.incidentReference) || text(ticket.ticketId) || 'Unknown ticket',
       product,
@@ -667,8 +951,10 @@
       thirdParty,
       topic,
       knowledge,
-      similarTickets: similar,
-      reply: buildReply({ ticket, topic, product, attempted, summary }),
+      sourcedGuidance: guidance,
+      sourceState,
+      replyContext,
+      reply: buildReply(replyContext, guidance, sourceState),
       analysis: {
         rootCause: {
           content: best.id === 'generic'
@@ -678,10 +964,18 @@
           evidence
         },
         solution: {
-          content: `Suggested checks for ${product}${best.id === 'generic' || moduleInfo.id === 'unknown' ? '' : ` · ${moduleInfo.label}`}:`,
-          steps: stepList
+          content: hypotheses.length
+            ? `Suggested checks for ${product}${moduleInfo.id === 'unknown' ? '' : ` \u00B7 ${moduleInfo.label}`}, derived from the recorded query:`
+            : 'No validated step can be derived from the recorded query yet. Confirm the following before suggesting any change:',
+          steps: stepList,
+          facts,
+          hypotheses,
+          questions,
+          sourcedGuidance: guidance,
+          sourceState,
+          sufficiency: hypotheses.length ? 'rules' : 'questions'
         },
-        searchResults: [{ query, results: { guides: { source: 'Pre-filled Sage searches (click to open)', results: links } } }]
+        searchResults: [{ query, results: { guides: { source: 'Sage searches (click to open)', results: links } } }]
       }
     };
   }
@@ -879,6 +1173,7 @@
     detectThirdParty,
     detectAlreadyAttempted,
     buildResourceLinks,
+    applySources,
     matchKnowledge,
     rankSimilarTickets,
     similarTickets,

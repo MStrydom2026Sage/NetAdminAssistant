@@ -19,7 +19,7 @@
         "Restart the MCS service and confirm it starts under the correct account."
       ],
       "alreadyDonePatterns": ["password reset", "service restarted"],
-      "links": [{ "title": "Sage Knowledgebase search: Sage 300 People MCS service", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20People%20MCS%20service" }],
+      "links": [{ "title": "Sage Knowledgebase (ZA) home — search for “Sage 300 People MCS service” on the site (no pre-filled Knowledgebase search URL is supported)", "url": "https://za-kb.sage.com/" }],
       "source": "Local knowledge base (support team)"
     },
     {
@@ -38,7 +38,7 @@
         "Confirm the device date, time and network access to the ESS URL."
       ],
       "alreadyDonePatterns": ["qr code regenerated"],
-      "links": [{ "title": "Sage Knowledgebase search: Sage 300 People ESS mobile registration", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20People%20ESS%20mobile%20registration" }],
+      "links": [{ "title": "Sage Knowledgebase (ZA) home — search for “Sage 300 People ESS mobile registration” on the site (no pre-filled Knowledgebase search URL is supported)", "url": "https://za-kb.sage.com/" }],
       "source": "Local knowledge base (support team)"
     },
     {
@@ -58,7 +58,7 @@
         "Recalculate in a copy of the database before changing live payroll data."
       ],
       "alreadyDonePatterns": ["tax tables imported", "Company Rule recalculation"],
-      "links": [{ "title": "Sage Knowledgebase search: Sage 300 People PAYE calculation", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20People%20PAYE%20calculation" }],
+      "links": [{ "title": "Sage Knowledgebase (ZA) home — search for “Sage 300 People PAYE calculation” on the site (no pre-filled Knowledgebase search URL is supported)", "url": "https://za-kb.sage.com/" }],
       "source": "Local knowledge base (support team)"
     },
     {
@@ -77,7 +77,7 @@
         "Review the resulting I/C costing entries before posting in the live company."
       ],
       "alreadyDonePatterns": [],
-      "links": [{ "title": "Sage Knowledgebase search: Sage 300 bill of materials assembly", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20bill%20of%20materials%20assembly" }],
+      "links": [{ "title": "Sage Knowledgebase (ZA) home — search for “Sage 300 bill of materials assembly” on the site (no pre-filled Knowledgebase search URL is supported)", "url": "https://za-kb.sage.com/" }],
       "source": "Local knowledge base (support team)"
     },
     {
@@ -96,7 +96,7 @@
         "Reconcile the control account to the subledger aged report."
       ],
       "alreadyDonePatterns": [],
-      "links": [{ "title": "Sage Knowledgebase search: Sage 300 G/L control account", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20G%2FL%20control%20account" }],
+      "links": [{ "title": "Sage Knowledgebase (ZA) home — search for “Sage 300 G/L control account” on the site (no pre-filled Knowledgebase search URL is supported)", "url": "https://za-kb.sage.com/" }],
       "source": "Local knowledge base (support team)"
     },
     {
@@ -115,7 +115,7 @@
         "Look for journals posted directly to the bank G/L account."
       ],
       "alreadyDonePatterns": ["statement re-imported"],
-      "links": [{ "title": "Sage Knowledgebase search: Sage 300 bank reconciliation out of balance", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20bank%20reconciliation%20out%20of%20balance" }],
+      "links": [{ "title": "Sage Knowledgebase (ZA) home — search for “Sage 300 bank reconciliation out of balance” on the site (no pre-filled Knowledgebase search URL is supported)", "url": "https://za-kb.sage.com/" }],
       "source": "Local knowledge base (support team)"
     },
     {
@@ -134,7 +134,7 @@
         "Review the I/C costing and audit reports afterwards."
       ],
       "alreadyDonePatterns": ["Day End Processing run"],
-      "links": [{ "title": "Sage Knowledgebase search: Sage 300 day end processing", "url": "https://za-kb.sage.com/portal/app/portlets/results/viewsearch.jsp?q=Sage%20300%20day%20end%20processing" }],
+      "links": [{ "title": "Sage Knowledgebase (ZA) home — search for “Sage 300 day end processing” on the site (no pre-filled Knowledgebase search URL is supported)", "url": "https://za-kb.sage.com/" }],
       "source": "Local knowledge base (support team)"
     },
     {
