@@ -1,336 +1,100 @@
-# NetAdmin Assistant v0.5.3
+# NetAdmin Assistant v0.6.0
 
-**AI-powered Sage 300 support ticket analyzer for NetAdmin & Sage CRM**
+**Offline Sage 300 support ticket analyser for NetAdmin**
 
-NetAdmin Assistant is a Chrome extension + backend service that uses Azure OpenAI to intelligently analyze support tickets, identify root causes, recommend solutions, and search relevant knowledge bases.
+NetAdmin Assistant is a Chrome (Manifest V3) extension that reads the NetAdmin ticket you are working on and produces a deterministic, rules-based analysis: a suggested problem area, suggested next steps, pre-filled Sage searches and a draft customer reply.
 
-## 🚀 Quick Start
+There is **no AI service, no API key, no OpenAI, no localhost helper server, no Express, no CORS layer and no dotenv**. Ticket content and attachments are never sent to a third party.
 
-### Backend Server
-
-```bash
-cd server
-npm install
-cp .env.example .env
-# Edit .env with your Azure OpenAI credentials
-npm run dev
-```
-
-Server runs on `http://localhost:3000`
-
-### Chrome Extension
+## 🚀 Quick start
 
 1. Open `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select the `extension` folder
-5. Visit a NetAdmin ticket page and click the green 🔍 button
+2. Enable **Developer mode**
+3. Click **Load unpacked** and select the `extension/` folder of this repository
+4. Open a NetAdmin ticket and click the green 🔍 floating button, or open the side panel from the extension icon
+5. Click **Analyze**
 
-## 📋 Features
+No `npm install` is required to use the extension. Node is only used to run the regression tests.
 
-### Current (v0.5.3)
-✅ **Ticket Analysis**
-- AI-powered root cause identification
-- Automated solution recommendations
-- Confidence scoring with evidence extraction
-- Support for attachments (OCR, file extraction)
+## 🧠 How the analysis works
 
-✅ **Knowledge Base Integration**
-- Sage KB search
-- Community forum lookup  
-- Documentation discovery
-- Search result caching
+| Layer | What it does | Requires network |
+|---|---|---|
+| Local rules engine (`extension/analyze.js`) | Webform field extraction, product/module detection, third-party detection, detailed topic rules, module guide fallbacks, already-attempted detection and step pruning, search-phrase generation, customer-safe reply, queue ranking | No |
+| Curated knowledge base (`extension/knowledge/knowledge-base.json`) | Editable local entries merged and ranked alongside the rules | No |
+| Past-ticket learning (`extension/history.js`) | Anonymised local records of completed NetAdmin tickets, ranked as historical context | No |
+| Live Sage sources (`extension/sage-sources.js`) | Optional ranking of Sage Knowledgebase and Sage Community Hub search results | Yes (optional) |
 
-✅ **Data Management**
-- SQLite database for ticket history
-- 24-hour analysis caching
-- API usage tracking
-- Solution effectiveness feedback
+The local rules engine is always the guaranteed fallback. Everything except the last row works with no network access at all.
 
-✅ **User Experience**
-- Dark theme with Sage green accents
-- Floating action button for quick access
-- Detailed side panel analysis view
-- Popup for fast ticket review
+### Rules coverage
 
-### Planned (Future Releases)
-📋 **Sage CRM Support** - Extend beyond NetAdmin
-📋 **Offline Mode** - Cache KB for offline access
-📋 **Ticket Clustering** - Group similar issues
-📋 **Escalation Prediction** - Flag L2/L3 tickets early
-📋 **Custom KB** - Build local embeddings database
-📋 **PII Redaction** - Auto-mask sensitive data
-📋 **Multi-language** - Support Afrikaans, Portuguese, etc.
-📋 **Mobile Companion** - On-the-go ticket checking
+Sage 300 People: MCS password, ESS mobile registration, tax/PAYE, leave and accruals.
+Sage 300 Cloud: BOM/assemblies, Tax Services, bank reconciliation, G/L control accounts, G/L consolidations, A/P, A/R history, O/E, P/O, I/C Day End, Business Insights (BIM), reporting / SI Connector, third-party compatibility, plus a module-level fallback for G/L, A/P, A/R, I/C, O/E, P/O, Bank, Tax, SI and People.
 
-## 🏗️ Architecture
+## 🔎 Sage Knowledgebase and Community Hub (optional)
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                  Browser (Chrome)                        │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │     NetAdmin Assistant Extension (Manifest V3)  │   │
-│  │  • Floating button on ticket pages              │   │
-│  │  • Side panel detailed view                     │   │
-│  │  • Popup quick access                           │   │
-│  │  • Local caching (24hr)                         │   │
-│  └─────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-                           ↓ (HTTP/REST)
-┌─────────────────────────────────────────────────────────┐
-│              Backend Server (Node.js/Express)           │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │ API Routes                                      │   │
-│  │ • POST /api/analyze - Ticket analysis           │   │
-│  │ • GET /api/history/* - Ticket history           │   │
-│  │ • GET /health - Status checks                   │   │
-│  └─────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │ Services                                        │   │
-│  │ • TicketAnalyzer - Root cause & solutions       │   │
-│  │ • AttachmentProcessor - File extraction/OCR     │   │
-│  │ • SearchOrchestrator - KB research              │   │
-│  │ • AI Provider Layer - Azure/OpenAI/Mock         │   │
-│  └─────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │ Database (SQLite)                               │   │
-│  │ • Tickets, Analyses, Attachments                │   │
-│  │ • Search cache, Solutions, API usage            │   │
-│  └─────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-                           ↓ (HTTPS)
-┌─────────────────────────────────────────────────────────┐
-│              External Services                          │
-│  • Azure OpenAI API (gpt-4, gpt-4-turbo, gpt-35)       │
-│  • Sage KB (help.sage.com)                              │
-│  • Sage Community (community.sage.com)                  │
-│  • Sage Docs (developer.sage.com)                       │
-└─────────────────────────────────────────────────────────┘
-```
+Live retrieval is **off by default** and is enabled from the **Local data** section of the side panel.
 
-## 📁 Project Structure
+- Only `za-kb.sage.com`, `us-kb.sage.com` and `communityhub.sage.com` are requested, using the search phrase the rules engine generates from the ticket.
+- The agent's existing authenticated browser session is used; no credentials are stored.
+- A short timeout, a capped response size and a fixed result limit apply. There is no crawling.
+- Google is a normal click-through link only. **Google results are never retrieved automatically.**
+- If a source cannot be read, the side panel says so and the pre-filled search links remain available.
+- Automated reading of Knowledgebase and Community pages must be approved by Sage IT / InfoSec. See [docs/SAGE-SOURCES.md](docs/SAGE-SOURCES.md).
 
-```
-NetAdminAssistant/
-├── server/                          # Backend Node.js/Express
-│   ├── server.js                   # Main app
-│   ├── package.json                # Dependencies
-│   ├── .env.example                # Config template
-│   ├── SETUP.md                    # Server setup guide
-│   ├── config/
-│   │   └── config.js               # Configuration management
-│   ├── services/
-│   │   ├── ticketAnalyzer.js       # Core analysis logic
-│   │   ├── attachmentProcessor.js  # File processing
-│   │   ├── searchOrchestrator.js   # KB search
-│   │   └── providers/
-│   │       ├── azureOpenAI.js      # Azure OpenAI integration
-│   │       ├── openai.js           # OpenAI fallback
-│   │       └── mock.js             # Mock provider for testing
-│   ├── routes/
-│   │   ├── health.js               # Health checks
-│   │   ├── analyze.js              # Analysis endpoints
-│   │   └── history.js              # History & feedback
-│   ├── db/
-│   │   ├── init.js                 # Database setup
-│   │   └── schema.sql              # Database schema
-│   ├── utils/
-│   │   ├── logger.js               # Logging utility
-│   │   └── validators.js           # Input validation
-│   └── middleware/
-│       └── errorHandler.js         # Error handling
-│
-├── extension/                        # Chrome Extension
-│   ├── manifest.json               # Manifest V3 config
-│   ├── README.md                   # Extension guide
-│   ├── background.js               # Service worker
-│   ├── content.js                  # Page scraper
-│   ├── popup.js                    # Popup logic
-│   ├── sidepanel.js                # Side panel logic
-│   ├── html/
-│   │   ├── popup.html              # Popup UI
-│   │   └── sidepanel.html          # Side panel UI
-│   ├── styles/
-│   │   ├── common.css              # Shared styles
-│   │   ├── popup.css               # Popup styles
-│   │   └── sidepanel.css           # Side panel styles
-│   └── icons/
-│       ├── icon16.png
-│       ├── icon48.png
-│       └── icon128.png
-│
-├── docs/
-│   ├── API.md                      # API documentation
-│   ├── ARCHITECTURE.md             # System design
-│   └── SETUP.md                    # Installation guide
-│
-├── .gitignore
-├── README.md                        # This file
-└── LICENSE
-```
+## 🗂️ Past-ticket learning
 
-## 🔧 Configuration
+While you are signed in to NetAdmin, completed tickets that are already on screen are reduced to an anonymised local record (topic, module, product, normalised terms, error codes, sanitised summary and recorded action). Site codes, email addresses and phone numbers are stripped, and the ticket reference is replaced with a short non-identifying local label.
 
-### Environment Variables (server/.env)
+Records are stored in `chrome.storage.local`, capped at 200 entries, kept for a maximum of 180 days, and can be deleted at any time with **Reset stored ticket learning**. Similar completed tickets are shown as historical context only and are never treated as authoritative.
 
-```env
-# Server
-PORT=3000
-NODE_ENV=development
-LOG_LEVEL=info
+## 📘 Local knowledge base
 
-# AI Provider (azure, openai, mock)
-AI_PROVIDER=azure
+`extension/knowledge/knowledge-base.json` is a plain JSON file that support staff can edit. See [docs/KNOWLEDGE-BASE.md](docs/KNOWLEDGE-BASE.md) for the format and the rules that keep entries from contradicting the rules engine.
 
-# Azure OpenAI
-AZURE_OPENAI_API_KEY=your-key-here
-AZURE_OPENAI_ENDPOINT=https://your-org.openai.azure.com/
-AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment
-AZURE_OPENAI_API_VERSION=2024-02-15-preview
+## 🔐 Permissions and privacy
 
-# Database
-DB_PATH=./data/netadmin-assistant.db
-DB_ENABLE_JOURNAL=true
+| Permission | Why |
+|---|---|
+| `storage` | Cached analyses, settings and the anonymised completed-ticket records |
+| `tabs` | Read the active NetAdmin tab to request the ticket |
+| `sidePanel` | Open the analysis side panel |
+| `https://netadmin.sage.co.za/*`, `https://*.sage.co.za/*` | Read the ticket you are working on |
+| `https://za-kb.sage.com/*`, `https://us-kb.sage.com/*`, `https://communityhub.sage.com/*` | Optional Knowledgebase and Community Hub retrieval |
 
-# Features
-ENABLE_LOCAL_ANALYSIS=true
-ENABLE_ATTACHMENT_PROCESSING=true
-ENABLE_TICKET_CACHING=true
-MAX_CACHE_AGE_HOURS=24
-```
+Ticket content, attachments and customer details never leave the browser.
 
-## 📚 API Endpoints
-
-### Health
-- `GET /health` - Basic health check
-- `GET /health/detailed` - Detailed status with stats
-- `GET /health/ready` - Readiness probe
-
-### Analysis
-- `POST /api/analyze` - Analyze single ticket
-- `POST /api/analyze/batch` - Analyze multiple tickets (max 10)
-- `POST /api/analyze/search` - Execute search queries
-
-### History
-- `GET /api/history/tickets` - Ticket history
-- `GET /api/history/tickets/:ticketId` - Ticket details
-- `GET /api/history/analyses/:ticketId` - Ticket analyses
-- `POST /api/history/feedback` - Submit feedback
-- `GET /api/history/stats` - Statistics
-
-## 🧪 Testing
-
-### Using Mock Provider (No API Keys Needed)
+## ✅ Tests
 
 ```bash
-cd server
-echo "AI_PROVIDER=mock" >> .env
-npm run dev
+npm test        # node --test tests/*.test.js
+npm run samples # print the analysis for every sample ticket
 ```
 
-### Test Endpoint
+The suite uses Node's built-in test runner with no runtime dependencies, loads the extension modules in a bare VM context (so any Node-only API in extension code fails the tests) and makes **no network calls** — live-source parsing and ranking are covered with static fixtures.
 
-```bash
-curl -X POST http://localhost:3000/api/analyze \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ticketId": "TKT001",
-    "subject": "Module installation error",
-    "description": "Getting error when installing module",
-    "metadata": {"priority": "high"}
-  }'
+## 📁 Layout
+
+```
+extension/
+  manifest.json
+  analyze.js            # deterministic rules engine
+  knowledge.js          # curated knowledge loader
+  knowledge/knowledge-base.json
+  history.js            # anonymised past-ticket learning
+  sage-sources.js       # optional KB / Community retrieval and ranking
+  background.js         # service worker, local analysis and caching
+  content.js            # NetAdmin scraping and floating button
+  popup.js, sidepanel.js
+  html/popup.html, html/sidepanel.html
+  styles/common.css, styles/popup.css, styles/sidepanel.css
+tests/
+docs/
 ```
 
-## 🔐 Security
+## ⚠️ Limitations
 
-✅ **Current**
-- Local processing - no ticket data sent to external services (except Sage KB)
-- Azure OpenAI API key stored in `.env` (not in code)
-- HTTPS for all Sage service calls
-- SQLite database local to machine
-
-⚠️ **Future**
-- [ ] PII redaction before analysis
-- [ ] Audit trail for all analyses
-- [ ] Encryption for local storage
-- [ ] GDPR compliance features
-
-## 🚨 Troubleshooting
-
-### Backend won't start
-```bash
-# Check if port 3000 is in use
-lsof -i :3000
-
-# Reinitialize database
-rm data/netadmin-assistant.db
-npm run dev
-```
-
-### Extension not connecting
-- Check backend status: `GET http://localhost:3000/health`
-- Verify `.env` has correct API credentials
-- Check Chrome DevTools (F12) for JavaScript errors
-- Reload extension: `chrome://extensions/` → Reload button
-
-### Azure OpenAI errors
-- Verify API key is correct
-- Check endpoint URL format (should end with `/`)
-- Confirm deployment name exists
-- Check quota hasn't been exceeded
-
-### Analysis taking too long
-- Increase timeout in `background.js`
-- Try Mock provider: `AI_PROVIDER=mock`
-- Check Azure service status
-
-## 📈 Performance
-
-- **Ticket scraping:** <100ms
-- **Analysis (Azure):** 3-8 seconds
-- **Search queries:** 1-3 seconds per source
-- **Database:** <50ms per query
-- **Memory usage:** ~50MB baseline + cache
-
-## 🤝 Contributing
-
-Branch: `development`
-
-1. Create feature branch: `git checkout -b feature/your-feature`
-2. Commit changes: `git commit -am 'Add feature'`
-3. Push to branch: `git push origin feature/your-feature`
-4. Open Pull Request to `development`
-
-## 📝 Changelog
-
-### v0.5.3
-- ✅ Initial MVP release
-- ✅ Azure OpenAI integration
-- ✅ Chrome extension with Manifest V3
-- ✅ SQLite database for ticket history
-- ✅ Root cause, solution, and search plan analysis
-- ✅ Attachment processing framework
-- ✅ Dark theme UI
-
-## 📖 Documentation
-
-- [Server Setup Guide](server/SETUP.md)
-- [Extension README](extension/README.md)
-- [API Documentation](docs/API.md) (coming soon)
-- [Architecture Details](docs/ARCHITECTURE.md) (coming soon)
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
-## 👤 Author
-
-**Matthys Strydom** (@MStrydom2026)
-- Sage Support Operations
-- AI/ML Integration Specialist
-
----
-
-**Status:** Beta Testing
-**Last Updated:** 2026-09-16
-**Support:** Internal Sage organization only (pending credentials)
+- Suggested areas and steps are rules-based guidance, not a confirmed Sage answer.
+- Historical ticket matches are context, not instructions.
+- Live Sage retrieval depends on the signed-in session and the current page markup; it fails gracefully.
