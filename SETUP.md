@@ -29,14 +29,14 @@ cd NetAdminAssistant
 2. Click the green 🔍 floating button, or open the side panel from the extension icon
 3. Click **Analyze**
 
-The side panel shows the suggested area, suggested next steps, local knowledge-base matches, similar completed tickets, pre-filled Sage searches and a draft customer reply.
+The side panel shows the suggested area, ticket-specific next steps (ticket facts, rules-based checks and any guidance from a matched Sage source), local knowledge-base matches, Sage search links and a draft customer reply.
 
 ## 4. Optional settings (side panel → Local data)
 
 | Setting | Default | Effect |
 |---|---|---|
 | Retrieve live Sage Knowledgebase and Community Hub results | Off | Fetches and ranks results from the official Sage domains using your signed-in browser session |
-| Learn from completed NetAdmin tickets on this device | On | Stores anonymised records of completed tickets already visible in NetAdmin |
+| Learn from completed NetAdmin tickets on this device | On | Stores anonymised records of completed tickets already visible in NetAdmin. Stored records are not used to diagnose the current ticket |
 | Reset stored ticket learning | — | Deletes every stored record immediately |
 
 **Before enabling live retrieval, confirm with Sage IT / InfoSec that automated reading of the Knowledgebase and Community Hub is acceptable.** See [docs/SAGE-SOURCES.md](docs/SAGE-SOURCES.md) for how to disable it permanently.
@@ -72,4 +72,4 @@ The `server/` backend, the OpenAI/Azure providers and the `http://localhost:3000
 |---|---|
 | "Refresh the NetAdmin page and try again." | The content script was injected before the extension reloaded — refresh the NetAdmin tab |
 | The same analysis appears for two tickets | Click **Clear Cache**; if it persists the ticket page did not expose the Summary field — check the ticket detail is visible before analysing |
-| No live Sage results | Retrieval is off by default, the session may not be signed in, or the source is unavailable. The pre-filled searches always work |
+| No live Sage results | Retrieval is off by default, the session may not be signed in, or the source is unavailable — the panel names the source and the reason. The Sage Knowledgebase is always reported as unavailable because its search endpoint returns HTTP 404; use the Knowledgebase home page or the labelled site-restricted Google search link |

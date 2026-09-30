@@ -148,6 +148,7 @@ function showError(container, message) {
 }
 
 function renderAnalysis(data, fromCache, container) {
+  currentAnalysis = data;
   const { analysis, topic, knowledge } = data;
   const { rootCause, solution } = analysis;
 

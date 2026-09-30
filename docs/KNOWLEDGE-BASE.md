@@ -17,7 +17,7 @@
   "likelyCause": "Short, factual explanation of the usual cause.",
   "steps": ["Safe check 1", "Safe check 2"],
   "alreadyDonePatterns": ["statement re-imported"],
-  "links": [{ "title": "Sage Knowledgebase search: ...", "url": "https://za-kb.sage.com/..." }],
+  "links": [{ "title": "Sage Knowledgebase (ZA) home — search for “...” on the site", "url": "https://za-kb.sage.com/" }],
   "source": "Local knowledge base (support team)"
 }
 ```
@@ -35,7 +35,7 @@
 | `likelyCause` | yes | Presented as suggested guidance, never as a confirmed answer. |
 | `steps` | yes | Safe, non-destructive checks. |
 | `alreadyDonePatterns` | no | Documentation of work the rules engine already prunes. |
-| `links` | no | **Must** be `https://` URLs; anything else is dropped when loading. |
+| `links` | no | **Must** be `https://` URLs; anything else is dropped when loading. Do not use `…/portal/app/portlets/results/viewsearch.jsp?q=…`: that Knowledgebase search endpoint returns HTTP 404. Link to the Knowledgebase home page or to an article you have actually opened. |
 | `source` | no | Shown under the entry so the reader knows where it came from. |
 
 ## Rules for new entries
@@ -45,7 +45,7 @@
 3. Do not add guidance that contradicts an existing rule in `analyze.js`. Update the rule instead, or narrow the entry with `topicId`.
 4. Never include customer names, site codes, contact details or ticket references.
 5. Keep steps safe: check and confirm before changing live data.
-6. Do not invent Knowledgebase article titles, menu paths or solution IDs. Link to a search or to an article you have actually opened.
+6. Do not invent Knowledgebase article titles, menu paths or solution IDs. Link to an article you have actually opened, or to the Knowledgebase home page with the phrase to search for in the title.
 
 ## Adding or updating an entry
 
