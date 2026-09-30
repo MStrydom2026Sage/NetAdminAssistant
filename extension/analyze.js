@@ -19,6 +19,8 @@
    * ------------------------------------------------------------------ */
 
   const FIELD_LABELS = [
+    ['question', 'How would you best describe this query?'],
+    ['question', 'How would you best describe this query'],
     ['summary', 'Summary of the query experienced and the outcome you are working towards'],
     ['summary', 'Summary of the query'],
     ['summary', 'Summary'],
@@ -50,7 +52,7 @@
     for (const [key, label] of FIELD_LABELS) {
       if (fields[key]) continue;
       const pattern = new RegExp(
-        `${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*(?:${LABEL_BOUNDARY})\\s*[:\\-]|$)`,
+        `(?:^|\\n)\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:[:\\-]\\s*|\\n\\s*${key === 'question' && !label.endsWith('?') ? '|\\?\\s+' : ''})([\\s\\S]*?)(?=\\n\\s*(?:${LABEL_BOUNDARY})\\s*(?:[:\\-]|\\n)|$)`,
         'i'
       );
       const match = source.match(pattern);
@@ -68,6 +70,9 @@
    * ------------------------------------------------------------------ */
 
   const SITE_CODE_PATTERNS = [
+    /https?:\/\/\S+/gi,
+    /[\w.+-]+@[\w-]+\.[\w.-]+/gi,
+    /\+?\d[\d\s()-]{7,}\d/g,
     /\bsite\s*code\s*[:\-]?\s*\S+/gi,
     /\bcustomer\s*code\s*[:\-]?\s*\S+/gi,
     /\[[A-Z]{1,4}\d{3,}\]/gi,
@@ -85,8 +90,8 @@
   const NOISE_WORDS = /\b(?:good day|good morning|good afternoon|hi there|dear|hello|please assist|kindly assist|please advise|thank you|thanks|regards|urgent|asap|client|customer|user)\b/gi;
   const STOP_WORDS = new Set([
     'the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'has', 'was', 'are', 'you', 'your',
-    'our', 'not', 'but', 'can', 'cannot', 'when', 'what', 'how', 'why', 'they', 'their', 'there',
-    'into', 'onto', 'out', 'get', 'got', 'any', 'all', 'will', 'would', 'should', 'could', 'been',
+    'our', 'but', 'can', 'when', 'what', 'how', 'why', 'they', 'their', 'there',
+    'into', 'onto', 'get', 'got', 'any', 'all', 'will', 'would', 'should', 'could', 'been',
     'does', 'did', 'doing', 'also', 'please', 'assist', 'issue', 'query', 'ticket', 'client'
   ]);
 
@@ -113,7 +118,7 @@
     const cleaned = stripSiteCodes(value).toLowerCase().replace(/[^a-z0-9 /]+/g, ' ');
     const terms = [];
     for (const word of cleaned.split(/\s+/)) {
-      if (word.length < 3 || STOP_WORDS.has(word)) continue;
+      if (word.length < 3 || /^\d+$/.test(word) || STOP_WORDS.has(word)) continue;
       if (!terms.includes(word)) terms.push(word);
     }
     return terms;
@@ -146,9 +151,8 @@
   /** Detect the Sage product for the ticket. */
   function detectProduct(ticket = {}) {
     const fields = extractFields(ticket.rawLoggedText || ticket.description);
-    const source = [ticket.product, fields.product, fields.module, fields.summary, ticket.module, ticket.subject, ticket.outline, ticket.description, ticket.rawLoggedText]
-      .map(text)
-      .join(' ');
+    const explicit = text(ticket.product) || text(fields.product);
+    const source = explicit || text(ticket.question) || fields.question || fields.summary || text(ticket.summary) || text(ticket.outline) || text(ticket.subject);
     const found = PRODUCTS.find((product) => product.match.test(source));
     return found ? found.label : 'Sage product not specified';
   }
@@ -516,6 +520,9 @@
 
   function scoreRule(rule, haystack, product, moduleId) {
     if (!rule.patterns.length) return 0;
+    if (rule.product && product !== 'Sage product not specified' && rule.product !== product) return 0;
+    if (rule.patterns.length > 1 && !rule.patterns[0].re.test(haystack)) return 0;
+    if (rule.id === 'third-party-compatibility' && !rule.patterns[1].re.test(haystack)) return 0;
     let score = 0;
     let matched = 0;
     for (const pattern of rule.patterns) {
@@ -545,8 +552,11 @@
     const lines = [];
     lines.push(`Good day ${safeName(ticket)}`);
     lines.push('');
-    lines.push(`Thank you for logging ${reference}. We understand the query relates to ${topic.label.toLowerCase()}${product === 'Sage product not specified' ? '' : ` in ${product}`}.`);
-    if (summary && !/^No “Summary/.test(summary)) lines.push(`Recorded summary: ${stripSiteCodes(summary)}`);
+    lines.push(`Thank you for logging ${reference}.`);
+    if (summary && !/^No “Summary/.test(summary)) lines.push(`Our understanding of your query: ${stripSiteCodes(summary)}`);
+    lines.push(topic.id === 'generic'
+      ? 'We cannot yet identify a specific cause or module from the recorded query.'
+      : `A possible area to check is ${topic.label.toLowerCase()}${product === 'Sage product not specified' ? '' : ` in ${product}`}; this is not a confirmed diagnosis.`);
     if (attempted.length) lines.push(`We can see the following has already been done, so we will not ask you to repeat it: ${attempted.map((item) => item.label).join('; ')}.`);
     if (topic.steps.length) {
       lines.push('');
@@ -573,30 +583,35 @@
    */
   function analyseTicket(ticket = {}, options = {}) {
     const fields = extractFields(ticket.rawLoggedText || ticket.description);
-    const summaryText = fields.summary || text(ticket.summary) || text(ticket.outline) || text(ticket.subject);
+    const question = text(ticket.question) || fields.question;
+    const description = text(ticket.description);
+    const summaryText = question || fields.summary || text(ticket.summary) || description || text(ticket.outline) || text(ticket.subject);
+    const questionSource = question ? (text(ticket.questionSource) || 'How would you best describe this query?')
+      : fields.summary ? 'Summary of the query' : description && summaryText === description ? 'Ticket description' : summaryText ? 'Ticket summary/title' : 'Not provided';
     const summary = summaryText || 'No “Summary of the query” provided.';
+    const cleanedSummary = stripSiteCodes(summary).replace(/\s+/g, ' ');
+    const querySummary = cleanedSummary.length > 280 ? `${cleanedSummary.slice(0, 280)}…` : cleanedSummary;
     const product = detectProduct(ticket);
-    const haystack = [summary, fields.stepsToReplicate, fields.errorMessage, fields.module, ticket.subject, ticket.outline, ticket.description, ticket.rawLoggedText, ticket.module]
-      .map(text)
-      .join('\n');
-    const moduleInfo = detectModule([fields.module, ticket.module, haystack].map(text).join(' '));
-    const thirdParty = detectThirdParty(haystack);
+    const intent = summaryText;
+    let moduleInfo = detectModule(intent);
+    const thirdParty = detectThirdParty(intent);
 
     let best = RULES[RULES.length - 1];
     let bestScore = 0;
     RULES.forEach((rule) => {
-      const score = scoreRule(rule, haystack, product, moduleInfo.id);
+      const score = scoreRule(rule, intent, product, moduleInfo.id);
       if (score > bestScore) {
         best = rule;
         bestScore = score;
       }
     });
+    if (best.id !== 'generic' && best.module && best.module !== 'unknown' && best.module !== 'si') {
+      moduleInfo = MODULES.find((module) => module.id === best.module) || moduleInfo;
+      moduleInfo = { id: moduleInfo.id, label: moduleInfo.label };
+    }
 
     const attempted = detectAlreadyAttempted(ticket);
     let steps = pruneSteps(best.steps, attempted);
-    if (best.id === 'generic' && MODULE_GUIDES[moduleInfo.id] && MODULE_GUIDES[moduleInfo.id].length) {
-      steps = pruneSteps(MODULE_GUIDES[moduleInfo.id].concat(best.steps), attempted);
-    }
     if (thirdParty.products.length && best.id !== 'third-party-compatibility') {
       steps = steps.concat(`Confirm the supported version of ${thirdParty.products[0]} for this Sage release with the vendor before changing anything.`);
     }
@@ -604,19 +619,20 @@
       ? [`Already reported as done, do not repeat: ${attempted.map((item) => item.label).join('; ')}.`].concat(steps)
       : steps.slice();
 
-    const query = buildSearchPhrase([summaryText, moduleInfo.id === 'unknown' ? '' : moduleInfo.label].filter(Boolean).join(' ')) || buildSearchPhrase(ticket.subject) || 'Sage support';
+    const query = buildSearchPhrase(intent) || 'Sage support';
     const links = buildResourceLinks(query, product);
 
-    const knowledge = matchKnowledge(options.knowledge || [], { haystack, product, moduleId: moduleInfo.id, topicId: best.id });
-    const similar = rankSimilarTickets({ haystack, product, moduleId: moduleInfo.id, topicId: best.id }, options.history || []);
+    const knowledge = matchKnowledge(options.knowledge || [], { haystack: intent, product, moduleId: moduleInfo.id, topicId: best.id });
+    const similar = rankSimilarTickets({ haystack: intent, product, moduleId: moduleInfo.id, topicId: best.id }, options.history || []);
 
     const evidence = [];
-    if (fields.summary) evidence.push(`Summary field: ${stripSiteCodes(fields.summary)}`);
+    if (question) evidence.push(`${questionSource}: ${stripSiteCodes(question)}`);
+    else if (fields.summary) evidence.push(`Summary field: ${stripSiteCodes(fields.summary)}`);
     if (fields.stepsToReplicate) evidence.push(`Steps to replicate: ${stripSiteCodes(fields.stepsToReplicate)}`);
     if (fields.resolutionsAttempted) evidence.push(`Resolutions attempted: ${stripSiteCodes(fields.resolutionsAttempted)}`);
     if (thirdParty.products.length) evidence.push(`Third-party product mentioned: ${thirdParty.products.join(', ')}`);
-    const errorCodes = extractErrorCodes(haystack);
-    if (errorCodes.length) evidence.push(`Error code referenced: ${errorCodes.join(', ')}`);
+    const errorCodes = extractErrorCodes(intent);
+    if (errorCodes.length) evidence.push(`Error code in query: ${errorCodes.join(', ')}`);
     (ticket.attachments || []).forEach((attachment) => {
       const name = text(typeof attachment === 'string' ? attachment : attachment && attachment.name);
       if (name) evidence.push(`Attachment listed: ${name}`);
@@ -639,6 +655,8 @@
       product,
       module: moduleInfo,
       summary,
+      querySummary,
+      questionSource,
       fields,
       query,
       errorCodes,
@@ -649,12 +667,14 @@
       reply: buildReply({ ticket, topic, product, attempted, summary }),
       analysis: {
         rootCause: {
-          content: `Suggested area: ${best.label}. ${best.cause} This is a rules-based suggestion, not a confirmed root cause.`,
+          content: best.id === 'generic'
+            ? 'The recorded query does not provide enough evidence to identify a specific cause or module. Confirm the affected workflow before applying any module-specific guidance.'
+            : `Suggested area: ${best.label}. ${best.cause} This is a rules-based suggestion, not a confirmed root cause.`,
           confidence,
           evidence
         },
         solution: {
-          content: `Suggested checks for ${product}${moduleInfo.id === 'unknown' ? '' : ` · ${moduleInfo.label}`}:`,
+          content: `Suggested checks for ${product}${best.id === 'generic' || moduleInfo.id === 'unknown' ? '' : ` · ${moduleInfo.label}`}:`,
           steps: stepList
         },
         searchResults: [{ query, results: { guides: { source: 'Pre-filled Sage searches (click to open)', results: links } } }]
@@ -677,18 +697,19 @@
     const scored = [];
     entries.forEach((entry, index) => {
       if (!entry || typeof entry !== 'object') return;
+      if (entry.product && context.product !== 'Sage product not specified' && entry.product !== context.product) return;
       let score = 0;
       const matchedOn = [];
       (entry.keywords || []).forEach((keyword) => {
         const value = lower(keyword);
-        if (value && haystack.includes(value)) {
+        if (value && keywordMatch(haystack, value)) {
           score += 3;
           matchedOn.push(keyword);
         }
       });
       (entry.errorPatterns || []).forEach((pattern) => {
         const value = lower(pattern);
-        if (value && haystack.includes(value)) {
+        if (value && keywordMatch(haystack, value)) {
           score += 5;
           matchedOn.push(pattern);
         }
@@ -696,12 +717,11 @@
       if (entry.topicId && entry.topicId === context.topicId) score += 4;
       if (entry.module && entry.module === context.moduleId) score += 2;
       if (entry.product && entry.product === context.product) score += 2;
-      else if (entry.product && context.product !== 'Sage product not specified' && entry.product !== context.product) score -= 3;
       const overlap = (entry.phrases || []).filter((phrase) => terms.includes(lower(phrase))).length;
       score += overlap;
       // Product or module alone is never enough: an entry must match the topic
       // or some wording from the ticket before it is offered.
-      if (!matchedOn.length && entry.topicId !== context.topicId) return;
+      if (!matchedOn.length || (entry.topicId !== context.topicId && matchedOn.length < 2)) return;
       if (score <= 3) return;
       scored.push({
         id: text(entry.id) || `entry-${index}`,
@@ -725,6 +745,11 @@
     });
   }
 
+  function keywordMatch(haystack, keyword) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, 'i').test(haystack);
+  }
+
   /* ------------------------------------------------------------------ *
    * Completed-ticket similarity
    * ------------------------------------------------------------------ */
@@ -736,17 +761,17 @@
   function rankSimilarTickets(context, records) {
     if (!Array.isArray(records) || !records.length) return [];
     const terms = normalizeTerms(context.haystack);
-    const codes = extractErrorCodes(context.haystack);
     const scored = [];
     records.forEach((record, index) => {
       if (!record || typeof record !== 'object') return;
       let score = 0;
-      const recordTerms = Array.isArray(record.terms) ? record.terms : normalizeTerms(record.summary);
+      const recordTerms = normalizeTerms(record.summary);
       const overlap = recordTerms.filter((term) => terms.includes(term));
       score += overlap.length;
-      const recordCodes = Array.isArray(record.errorCodes) ? record.errorCodes : [];
-      const codeOverlap = recordCodes.filter((code) => codes.includes(code));
-      score += codeOverlap.length * 5;
+      const codeOverlap = [];
+      // A prior ticket's topic, module or error code is never sufficient
+      // without meaningful overlap with the current question.
+      if (overlap.length < (record.topicId === context.topicId ? 2 : 3)) return;
       if (record.topicId && record.topicId === context.topicId) score += 6;
       if (record.module && record.module === context.moduleId) score += 2;
       if (record.product && record.product === context.product) score += 2;

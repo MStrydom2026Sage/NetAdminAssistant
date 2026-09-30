@@ -1,6 +1,6 @@
 # NetAdmin Assistant Chrome Extension
 
-Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI service, API key or helper server is used, and ticket content never leaves the browser.
+Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI service, API key or helper server is used. Optional Sage retrieval sends a sanitised search phrase to official Sage sites after opt-in.
 
 ## Installation
 
@@ -21,12 +21,12 @@ Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI ser
 | `background.js` | Service worker: local analysis, caching, settings, message routing |
 | `content.js` | NetAdmin scraping (ticket, webform fields, actions, queues) and the floating button |
 | `sidepanel.js` / `html/sidepanel.html` | Side panel UI |
-| `popup.js` / `html/popup.html` | Quick popup |
 | `styles/` | Dark theme with the green Sage accent |
 
 ## Behaviour
 
 - Analysis runs entirely in the service worker using `analyze.js`.
+- The toolbar icon and floating button open the side panel directly. The question field is shown there before suggestions, with its source; when evidence is weak, use the clarifying checks rather than a module diagnosis.
 - Suggested areas and steps are labelled as suggestions; only ticket-derived facts appear under **Confirmed evidence from the ticket**.
 - Similar completed tickets are labelled historical context and are never authoritative.
 - Live Sage retrieval is optional, off by default, limited to the official Sage domains, time-limited and size-capped. Google stays a click-through link.

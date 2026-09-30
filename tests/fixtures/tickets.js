@@ -126,6 +126,18 @@ const TICKETS = [
     product: 'Sage 300 Cloud',
     module: 'gl',
     data: ticket('WF100014', 'Sage 300 Cloud', 'General ledger consolidation totals differ between the source and destination company.')
+  },
+  {
+    name: 'Webform query overrides unrelated control-account metadata',
+    topic: 'bank-reconciliation',
+    mode: 'guide',
+    product: 'Sage 300 Cloud',
+    module: 'bank',
+    data: Object.assign(ticket('WF100015', 'Sage 300 Cloud', 'Bank reconciliation is out of balance after importing the statement.', '', {
+      ticket: { subject: 'Error 900987 G/L control account 2026', description: 'A/P A/R vendor control account error 900987' }
+    }), {
+      rawLoggedText: 'Product: Sage 300 Cloud\nHow would you best describe this query?\nBank reconciliation is out of balance after importing the statement.\nSummary of the query: Error 900987 G/L control account 2026\nDescribe the resolutions attempted:'
+    })
   }
 ];
 

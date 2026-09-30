@@ -41,6 +41,48 @@ test('webform fields are extracted', () => {
   assert.equal(fields.product, 'Sage 300 People');
 });
 
+test('the webform question is authoritative over unrelated codes and metadata', () => {
+  const data = TICKETS.at(-1).data;
+  const result = A.analyseTicket(data, { knowledge: require('./load-analyzer').loadKnowledgeFile().entries });
+  assert.match(result.fields.question, /Bank reconciliation is out of balance/);
+  assert.equal(result.questionSource, 'How would you best describe this query?');
+  assert.match(result.summary, /Bank reconciliation is out of balance/);
+  assert.equal(result.topic.id, 'bank-reconciliation');
+  assert.equal(result.module.id, 'bank');
+  assert.ok(!result.knowledge.some((entry) => entry.id === 'kb-gl-control-account'));
+  assert.doesNotMatch(result.analysis.rootCause.content + result.reply, /control account|A\/P|A\/R/);
+  assert.doesNotMatch(result.query, /900987|2026/);
+});
+
+test('webform answer survives same-line and multiline question markup', () => {
+  const sameLine = A.extractFields('How would you best describe this query? Bank reconciliation out of balance.\nProduct: Sage 300 Cloud');
+  assert.equal(sameLine.question, 'Bank reconciliation out of balance.');
+  const multiline = A.extractFields('How would you best describe this query?:\nCannot reconcile bank.\nAfter importing OFX.\nSummary of the query: G/L error 900987');
+  assert.equal(multiline.question, 'Cannot reconcile bank. After importing OFX.');
+  assert.equal(multiline.summary, 'G/L error 900987');
+});
+
+test('an unrelated error code alone cannot trigger a diagnosis or historical resolution', () => {
+  const data = { rawLoggedText: 'How would you best describe this query?: The application freezes when saving a new record.\nError message: 900987',
+    subject: 'G/L control account 900987', product: 'Sage 300 Cloud' };
+  const result = A.analyseTicket(data, { knowledge: require('./load-analyzer').loadKnowledgeFile().entries,
+    history: [{ summary: 'G/L control account 900987', terms: ['control', 'account'], errorCodes: ['900987'], topicId: 'gl-control-account', product: 'Sage 300 Cloud', resolution: 'Change A/P control account.' }] });
+  assert.equal(result.topic.id, 'generic');
+  assert.equal(result.module.id, 'unknown');
+  assert.equal(result.knowledge.length, 0);
+  assert.equal(result.similarTickets.length, 0);
+  assert.match(result.analysis.rootCause.content, /does not provide enough evidence|cannot identify/i);
+  assert.match(result.reply, /application freezes/i);
+});
+
+test('missing webform answer falls back to ticket description, not a stale title', () => {
+  const result = A.analyseTicket({ subject: 'G/L control account error 900987',
+    description: 'The bank reconciliation is out of balance after statement import.', product: 'Sage 300 Cloud' });
+  assert.equal(result.topic.id, 'bank-reconciliation');
+  assert.equal(result.questionSource, 'Ticket description');
+  assert.match(result.querySummary, /bank reconciliation/i);
+});
+
 test('missing summary is explicit', () => {
   assert.match(A.analyseTicket(TICKETS[7].data).summary, /No “Summary of the query”/);
 });
@@ -49,6 +91,8 @@ test('site codes and greetings are removed from the search phrase', () => {
   assert.doesNotMatch(A.buildSearchPhrase('Good day please assist [U12345] day end error WF123456'), /U12345|good day|please assist|WF123456/i);
   assert.ok(A.buildSearchPhrase('x'.repeat(150)).length <= 70);
   assert.equal(A.stripSiteCodes('Site Code: ZA12345 bank reconciliation'), 'bank reconciliation');
+  assert.match(A.buildSearchPhrase('Bank reconciliation is out of balance and cannot post'), /out of balance.*cannot post/i);
+  assert.doesNotMatch(A.buildSearchPhrase('Bank reconciliation jane@example.com +27 82 123 4567 https://example.com/case'), /jane|example|123|case/i);
 });
 
 test('work already attempted is not proposed again', () => {

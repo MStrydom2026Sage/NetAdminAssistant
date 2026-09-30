@@ -28,6 +28,8 @@ function scrapeCurrentTicket() {
     outline: '',
     description: '',
     rawLoggedText: '',
+    question: '',
+    questionSource: '',
     product: '',
     module: '',
     customerName: '',
@@ -108,6 +110,8 @@ function scrapeCurrentTicket() {
 
     // Full logged text so the analyzer can read the NetAdmin webform fields
     ticketData.rawLoggedText = readLoggedText();
+    ticketData.question = readQuestionAnswer();
+    if (ticketData.question) ticketData.questionSource = 'How would you best describe this query?';
     ticketData.outline =
       document.querySelector('[data-ticket-outline], .ticket-outline')?.textContent?.trim() ||
       ticketData.subject;
@@ -121,6 +125,37 @@ function scrapeCurrentTicket() {
   }
 
   return ticketData;
+}
+
+const QUESTION_LABEL = /^how would you best describe this query\s*\??\s*[:*]?\s*$/i;
+
+/** Read a webform answer without pulling in adjacent labels or page chrome. */
+function readQuestionAnswer() {
+  const labels = document.querySelectorAll('label, th, dt, strong, b, span, td, div, p');
+  for (const label of labels) {
+    if (!QUESTION_LABEL.test((label.textContent || '').trim())) continue;
+    const target = label.getAttribute('for') && document.getElementById(label.getAttribute('for'));
+    const candidates = [target, label.nextElementSibling, label.parentElement?.nextElementSibling];
+    if (label.parentElement && label.parentElement.textContent !== label.textContent) {
+      candidates.push(label.parentElement);
+    }
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const control = candidate.matches?.('input, textarea, select') ? candidate
+        : candidate.querySelector?.('input, textarea, select');
+      const value = (control?.value || candidate.value || candidate.innerText || candidate.textContent || '')
+        .replace(/^how would you best describe this query\s*\??\s*[:*]?\s*/i, '').trim();
+      const answer = value.split(/\n\s*(?:Summary of the query|Describe the resolutions attempted|Detail the steps to replicate|Product|Module)\s*[:?\-]/i)[0].trim();
+      if (/^(?:Summary of the query|Describe the resolutions attempted|Detail the steps to replicate|Product|Module)\s*[:?\-]/i.test(answer)) continue;
+      if (answer && !QUESTION_LABEL.test(answer)) return answer.slice(0, 4000);
+    }
+  }
+  for (const control of document.querySelectorAll('textarea[aria-label], input[aria-label], textarea[name], input[name]')) {
+    if (/how would you best describe this query|describe.?this.?query/i.test(
+      `${control.getAttribute('aria-label') || ''} ${control.getAttribute('name') || ''}`
+    )) return (control.value || '').trim().slice(0, 4000);
+  }
+  return '';
 }
 
 /**

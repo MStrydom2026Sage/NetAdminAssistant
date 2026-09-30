@@ -52,6 +52,20 @@ test('unrelated pages produce no ranked results rather than invented ones', () =
   assert.equal(ranked.length, 0);
 });
 
+test('an incidental error code or product name cannot promote an unrelated Sage result', () => {
+  const ranked = S.rankResults([
+    { title: 'G/L control account 900987 2026 for Sage 300 Cloud', snippet: 'A/P A/R vendor posting', url: 'https://za-kb.sage.com/x' },
+    { title: 'Bank reconciliation out of balance after statement import', snippet: 'Compare unmatched lines', url: 'https://za-kb.sage.com/y' }
+  ], {
+    terms: A.normalizeTerms('Bank reconciliation out of balance after statement import'),
+    errorCodes: ['900987', '2026'],
+    product: 'Sage 300 Cloud',
+    moduleLabel: 'General Ledger'
+  });
+  assert.equal(ranked.length, 1);
+  assert.match(ranked[0].title, /Bank reconciliation/);
+});
+
 test('only official Sage hosts are configured for retrieval', () => {
   assert.deepEqual(Array.from(S.ALLOWED_HOSTS), ['za-kb.sage.com', 'us-kb.sage.com', 'communityhub.sage.com']);
   assert.ok(S.SOURCES.every((source) => source.search.startsWith('https://')));

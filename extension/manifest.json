@@ -17,7 +17,6 @@
     "https://communityhub.sage.com/*"
   ],
   "action": {
-    "default_popup": "html/popup.html",
     "default_title": "NetAdmin Assistant"
   },
   "side_panel": {
