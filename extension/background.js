@@ -124,8 +124,8 @@ async function handleAnalyze(data, sendResponse) {
   }
 }
 
-// Bump when the analysis rules or product scoping change, so analyses cached
-// by an older version are never reused.
+// Bump (together with manifest.json) when the analysis rules or product
+// scoping change, so analyses cached by an older version are never reused.
 const ANALYSIS_VERSION = '0.7.0';
 
 /**

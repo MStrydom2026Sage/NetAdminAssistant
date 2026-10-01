@@ -1018,7 +1018,7 @@
   function scoreRule(rule, haystack, product, moduleId) {
     if (!rule.patterns.length) return 0;
     if (!ruleAppliesTo(rule, product)) return 0;
-    if (product === 'Sage 300 People' && rule.module && !['people', 'si'].includes(rule.module) && rule.id !== 'third-party-compatibility') return 0;
+    if (product === PEOPLE && rule.module && !['people', 'si'].includes(rule.module) && rule.id !== 'third-party-compatibility') return 0;
     if (rule.patterns.length > 1 && !rule.patterns[0].re.test(haystack)) return 0;
     if (rule.id === 'third-party-compatibility' && !rule.patterns[1].re.test(haystack)) return 0;
     if (rule.id === 'gl-control-account' && !/journal|direct (?:g\/l|general ledger)|pick (?:a )?(?:vendor|customer)/i.test(haystack)) return 0;
