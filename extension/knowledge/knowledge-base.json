@@ -140,6 +140,7 @@
     {
       "id": "kb-third-party-compatibility",
       "title": "Third-party product compatibility with a Sage release",
+      "products": ["Sage 300 Cloud", "Sage 300 People"],
       "module": "si",
       "topicId": "third-party-compatibility",
       "keywords": ["peresoft", "orchid", "technisoft", "autosimply", "compatible", "compatibility"],

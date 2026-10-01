@@ -31,6 +31,7 @@ function scrapeCurrentTicket() {
     question: '',
     questionSource: '',
     product: '',
+    incidentTypeGroup: '',
     module: '',
     customerName: '',
     customerEmail: '',
@@ -116,6 +117,7 @@ function scrapeCurrentTicket() {
       document.querySelector('[data-ticket-outline], .ticket-outline')?.textContent?.trim() ||
       ticketData.subject;
     ticketData.product = readLabelledValue(/^product$/i);
+    ticketData.incidentTypeGroup = readIncidentTypeGroup();
     ticketData.module = readLabelledValue(/^(module|area|category)$/i);
     ticketData.actions = readActionHistory();
 
@@ -154,6 +156,69 @@ function readQuestionAnswer() {
     if (/how would you best describe this query|describe.?this.?query/i.test(
       `${control.getAttribute('aria-label') || ''} ${control.getAttribute('name') || ''}`
     )) return (control.value || '').trim().slice(0, 4000);
+  }
+  return '';
+}
+
+const GROUP_LABEL = /^incident\s*type\s*group\s*[:*]?\s*[:*]?$/i;
+const GROUP_INLINE = /^incident\s*type\s*group\s*[:*]?\s*[:\-]\s*(.+)$/i;
+const GROUP_PLACEHOLDER = /^(?:-+\s*)?(?:please\s+)?(?:select|choose|none|n\/a)\b/i;
+
+function isFormControl(element) {
+  if (!element) return false;
+  if (typeof element.matches === 'function') return element.matches('select, input, textarea');
+  return /^(?:select|input|textarea)$/i.test(element.tagName || '');
+}
+
+/** Text shown for a control: the selected option's label, not its id value. */
+function controlText(control) {
+  if (!control) return '';
+  if ((control.tagName && /^select$/i.test(control.tagName)) || control.selectedOptions) {
+    const option = control.selectedOptions?.[0] || control.options?.[control.selectedIndex];
+    if (option) return (option.text || option.textContent || option.label || '').trim();
+  }
+  return (control.value || '').trim();
+}
+
+// Stops an inline "label: value" read from running into the next field.
+const NEXT_FIELD = /\s+(?:product|module|incident\s*type|priority|status|stage|category|sub[- ]?category|assigned\s*to|logged\s*by|site\s*code|customer)\s*[:\-]/i;
+
+function cleanGroupValue(value) {
+  const cleaned = String(value || '').replace(/\s+/g, ' ').trim().split(NEXT_FIELD)[0].trim();
+  if (!cleaned || cleaned.length > 120 || GROUP_LABEL.test(cleaned) || GROUP_PLACEHOLDER.test(cleaned)) return '';
+  return cleaned;
+}
+
+/**
+ * Read the NetAdmin "Incident Type Group" (for example
+ * "Support-Sage 300 Cloud"). It is rendered as a label next to a value, a
+ * label bound to a select/input, a single "label: value" element or a named
+ * control, so each variation is tried in turn.
+ */
+function readIncidentTypeGroup() {
+  const elements = document.querySelectorAll('label, th, dt, dd, td, span, strong, b, div, p');
+  for (const element of elements) {
+    const own = (element.textContent || '').replace(/\s+/g, ' ').trim();
+    if (own.length < 200) {
+      const inline = GROUP_INLINE.exec(own);
+      if (inline && cleanGroupValue(inline[1])) return cleanGroupValue(inline[1]);
+    }
+    if (!GROUP_LABEL.test(own)) continue;
+    const forId = element.getAttribute?.('for');
+    const target = forId ? document.getElementById(forId) : null;
+    const candidates = [target, element.nextElementSibling, element.parentElement?.nextElementSibling];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const control = isFormControl(candidate) ? candidate : candidate.querySelector?.('select, input, textarea');
+      const value = cleanGroupValue(control ? controlText(control) : (candidate.innerText || candidate.textContent || ''));
+      if (value) return value;
+    }
+  }
+  for (const control of document.querySelectorAll('select[name], select[id], select[aria-label], input[name], input[id], input[aria-label]')) {
+    const name = `${control.getAttribute('aria-label') || ''} ${control.getAttribute('name') || ''} ${control.getAttribute('id') || ''}`;
+    if (!/incident.?type.?group/i.test(name)) continue;
+    const value = cleanGroupValue(controlText(control));
+    if (value) return value;
   }
   return '';
 }

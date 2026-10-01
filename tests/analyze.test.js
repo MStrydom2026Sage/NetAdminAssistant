@@ -247,12 +247,19 @@ test('retrieved Sage results are cited, never turned into invented instructions'
   const base = A.analyseTicket(query('The A/R customer statement report does not print.'));
   const sources = {
     enabled: true,
-    results: [{ title: 'Report does not print from Sage 300', url: 'https://za-kb.sage.com/article/12345', snippet: 'Check the print destination.', source: 'Sage Knowledgebase (ZA)', articleId: '12345' }],
+    results: [
+      { title: 'Report does not print from Sage 300', url: 'https://za-kb.sage.com/article/12345', snippet: 'Check the print destination.', source: 'Sage Knowledgebase (ZA)', articleId: '12345', productVerified: true },
+      { title: 'Statement printing tips', url: 'https://communityhub.sage.com/t/9', snippet: 'Printer settings.', source: 'Sage Community Hub' }
+    ],
     unavailable: [{ name: 'Sage Community Hub', reason: 'the page returned HTTP 404' }]
   };
   const applied = A.applySources(base, sources);
   const cited = applied.sourcedGuidance.filter((item) => item.kind === 'retrieved');
-  assert.equal(cited.length, 1);
+  assert.equal(cited.length, 2);
+  // a result whose product could not be validated is labelled and kept out of the reply
+  assert.equal(cited[1].productVerified, false);
+  assert.match(cited[1].detail, /Product not confirmed for Sage 300 Cloud/);
+  assert.doesNotMatch(applied.reply, /Statement printing tips/);
   assert.equal(cited[0].url, 'https://za-kb.sage.com/article/12345');
   assert.equal(cited[0].steps.length, 0);
   assert.match(cited[0].detail, /confirm its instructions/i);

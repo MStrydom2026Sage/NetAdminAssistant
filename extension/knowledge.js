@@ -23,6 +23,7 @@
         id,
         title: text(entry.title) || id,
         product: text(entry.product),
+        products: (entry.products || []).map(text).filter(Boolean),
         module: text(entry.module),
         topicId: text(entry.topicId),
         keywords: (entry.keywords || []).map(text).filter(Boolean),

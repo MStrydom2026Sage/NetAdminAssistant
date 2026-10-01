@@ -28,6 +28,7 @@
     ['stepsToReplicate', 'Steps to replicate'],
     ['resolutionsAttempted', 'Describe the resolutions attempted'],
     ['resolutionsAttempted', 'Resolutions attempted'],
+    ['incidentTypeGroup', 'Incident Type Group'],
     ['product', 'Product'],
     ['module', 'Module'],
     ['version', 'Version'],
@@ -87,7 +88,6 @@
     return out.replace(/\s+/g, ' ').trim();
   }
 
-  const NOISE_WORDS = /\b(?:good day|good morning|good afternoon|hi there|dear|hello|please assist|kindly assist|please advise|thank you|thanks|regards|urgent|asap|client|customer|user)\b/gi;
   const STOP_WORDS = new Set([
     'the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'has', 'was', 'are', 'you', 'your',
     'our', 'but', 'can', 'when', 'what', 'how', 'why', 'they', 'their', 'there',
@@ -95,22 +95,99 @@
     'does', 'did', 'doing', 'also', 'please', 'assist', 'issue', 'query', 'ticket', 'client'
   ]);
 
-  /** Build the ticket-specific search phrase used for links and retrieval. */
-  function buildSearchPhrase(value) {
-    const cleaned = stripSiteCodes(value)
-      .replace(NOISE_WORDS, ' ')
+  // Greetings and courtesy phrases are never part of the issue.
+  const GREETINGS = /\b(?:good day|good morning|good afternoon|hi there|dear|hello|please assist|kindly assist|please advise|please help|thank you|thanks|regards|urgent|asap)\b/gi;
+  // The product is applied separately to every search, so it is never part of
+  // the keyword phrase.
+  const PRODUCT_WORDS = /\bsage\s*300\s*(?:cloud|people|erp)?\b|\baccpac\b|\bsage\b/gi;
+  const PHRASE_DROP = new Set([
+    'the', 'a', 'an', 'and', 'is', 'are', 'was', 'were', 'be', 'been', 'has', 'have', 'had', 'does', 'did', 'do',
+    'please', 'kindly', 'assist', 'advise', 'client', 'clients', 'customer', 'customers', 'wants', 'want', 'needs',
+    'need', 'would', 'could', 'should', 'like', 'also', 'very', 'just', 'currently', 'still', 'our', 'their', 'your',
+    'my', 'we', 'they', 'he', 'she', 'i', 'you', 'it', 'its', 'this', 'that', 'these', 'those', 'issue', 'query',
+    'ticket', 'gets', 'getting', 'receives', 'receiving', 'keeps', 'trying', 'tried', 'there', 'says', 'said',
+    'reports', 'reported', 'asks', 'asked'
+  ]);
+  const EDGE_WORDS = new Set(['to', 'of', 'in', 'at', 'by', 'for', 'with', 'and', 'or', 'from', 'after', 'before', 'when', 'while', 'but', 'so', 'then', 'because']);
+  const QUOTED_MESSAGE = /["\u201C]([^"\u201C\u201D]{6,120})["\u201D]/;
+  const LABELLED_MESSAGE = /\b(?:error message|message|error)\s*[:\-]\s*([^.\n;]{6,100})/i;
+  const ISSUE_CODE = /\b(?:error|err|code|msg|message|exception)\s*(?:number|no\.?)?\s*[:#]?\s*(0x[0-9a-f]{3,}|[a-z]{0,5}-?\d{2,6})\b|\b(0x[0-9a-f]{4,})\b/gi;
+
+  function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /** Privacy-sanitised words, in their original order. */
+  function phraseWords(value, exclude, codes = []) {
+    let cleaned = stripSiteCodes(value).replace(GREETINGS, ' ').replace(PRODUCT_WORDS, ' ');
+    for (const word of exclude) cleaned = cleaned.replace(new RegExp(`(?:^|(?<=[^\\p{L}\\p{N}]))${escapeRegExp(word)}(?=$|[^\\p{L}\\p{N}])`, 'giu'), ' ');
+    return cleaned
       .replace(/[^\p{L}\p{N} /._-]+/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const words = [];
-    for (const word of cleaned.split(' ')) {
-      if (!word) continue;
-      if (STOP_WORDS.has(word.toLowerCase())) continue;
-      const candidate = words.concat(word).join(' ');
-      if (candidate.length > MAX_QUERY_LENGTH) break;
-      words.push(word);
+      .split(/\s+/)
+      .map((word) => word.replace(/^[._/-]+|[._/-]+$/g, ''))
+      .filter((word) => word && !PHRASE_DROP.has(word.toLowerCase())
+        && (/\p{L}/u.test(word) || codes.some((code) => code.toLowerCase() === word.toLowerCase())));
+  }
+
+  /** Error codes quoted in the question itself; incidental numbers are ignored. */
+  function extractIssueCodes(value) {
+    const source = stripSiteCodes(value);
+    const codes = [];
+    let match;
+    ISSUE_CODE.lastIndex = 0;
+    while ((match = ISSUE_CODE.exec(source)) !== null) {
+      const code = match[1] || match[2];
+      if (!/\d/.test(code)) continue;
+      if (!codes.some((item) => item.toLowerCase() === code.toLowerCase())) codes.push(code);
     }
-    return words.join(' ').trim();
+    return codes;
+  }
+
+  function trimEdges(words) {
+    const out = words.slice();
+    while (out.length && EDGE_WORDS.has(out[0].toLowerCase())) out.shift();
+    while (out.length && EDGE_WORDS.has(out[out.length - 1].toLowerCase())) out.pop();
+    return out;
+  }
+
+  /**
+   * Build the concise issue-keyword phrase used for every search link and for
+   * optional retrieval. It comes from the recorded question only: a quoted
+   * error message is preferred, then error codes actually quoted in the
+   * question, then the remaining issue words. Site codes, ticket references,
+   * contact details, greetings, the customer's name and the product name are
+   * removed; the product is applied to each search separately.
+   * @param {string} value the recorded question
+   * @param {{exclude?: string[]}} [options] words to remove (customer names)
+   */
+  function buildSearchPhrase(value, options = {}) {
+    const exclude = (options.exclude || []).map(text).filter((word) => word.length > 1);
+    const source = text(value);
+    const words = [];
+    const add = (list, unique) => {
+      for (const word of list) {
+        if (unique && words.some((item) => item.toLowerCase() === word.toLowerCase())) continue;
+        const candidate = words.concat(word).join(' ');
+        if (candidate.length > MAX_QUERY_LENGTH) return false;
+        words.push(word);
+      }
+      return true;
+    };
+    const message = QUOTED_MESSAGE.exec(source) || LABELLED_MESSAGE.exec(source);
+    const messageWords = message ? trimEdges(phraseWords(message[1], exclude)) : [];
+    const codes = extractIssueCodes(source).filter((code) => !exclude.some((word) => word.toLowerCase() === code.toLowerCase()));
+    if (messageWords.length >= 2) {
+      add(messageWords);
+      add(codes, true);
+      return words.join(' ').trim();
+    }
+    const keywords = trimEdges(phraseWords(source, exclude, codes));
+    // Natural order when everything fits; otherwise the codes go first so
+    // they are never cut off.
+    if (keywords.join(' ').length > MAX_QUERY_LENGTH) add(codes, true);
+    add(keywords.filter((word) => !words.includes(word)));
+    add(codes, true);
+    return trimEdges(words).join(' ').trim();
   }
 
   /** Normalised comparison terms used by the similarity and knowledge layers. */
@@ -143,18 +220,75 @@
    * Product, module and third-party detection
    * ------------------------------------------------------------------ */
 
+  const PRODUCT_UNKNOWN = 'Sage product not specified';
+  const CLOUD = 'Sage 300 Cloud';
+  const PEOPLE = 'Sage 300 People';
+  const BOTH = [CLOUD, PEOPLE];
+
+  // Only an explicit product name classifies a group or product field. A bare
+  // "Sage 300", a module name or payroll wording never implies a product.
   const PRODUCTS = [
-    { id: 'sage300people', label: 'Sage 300 People', match: /sage\s*300\s*people|\b(?:paye|uif|sdl|ess|employee self service|payroll|employee tax|irp5|emp201|emp501)\b/i },
-    { id: 'sage300cloud', label: 'Sage 300 Cloud', match: /sage\s*300\s*(?:cloud|erp|accpac)?|\baccpac\b|\b(?:g\/l|a\/p|a\/r|i\/c|o\/e|p\/o)\b/i }
+    { id: 'sage300people', label: PEOPLE, match: /sage\s*300\s*people/i },
+    { id: 'sage300cloud', label: CLOUD, match: /sage\s*300\s*cloud/i }
   ];
+
+  // Product names that can appear in the ticket text and contradict the group.
+  const PRODUCT_MENTIONS = [
+    { label: PEOPLE, match: /sage\s*300\s*people/i },
+    { label: CLOUD, match: /sage\s*300\s*(?:cloud|erp)|\baccpac\b/i },
+    { label: 'Sage 300 Construction and Real Estate', match: /sage\s*300\s*(?:cre\b|construction)/i },
+    { label: 'Sage Evolution', match: /sage\s*evolution/i },
+    { label: 'Sage Pastel', match: /sage\s*pastel|\bpastel\s*(?:partner|xpress|evolution)/i },
+    { label: 'Sage X3', match: /sage\s*x3/i },
+    { label: 'Sage Intacct', match: /sage\s*intacct/i },
+    { label: 'Sage VIP', match: /sage\s*vip\b/i }
+  ];
+
+  /** Map an Incident Type Group or Product value to Sage 300 Cloud / People. */
+  function classifyProduct(value) {
+    const source = text(value);
+    const found = PRODUCTS.filter((product) => product.match.test(source));
+    return found.length === 1 ? found[0].label : '';
+  }
+
+  /**
+   * Resolve the ticket's product.
+   * The NetAdmin "Incident Type Group" is authoritative. The Product field is
+   * only used when no group is recorded at all. A group that is present but not
+   * recognised leaves the product unconfirmed, and product names in the ticket
+   * text never change the product: they are reported as a contradiction.
+   */
+  function resolveProduct(ticket = {}, fieldsIn) {
+    const fields = fieldsIn || extractFields(ticket.rawLoggedText || ticket.description);
+    const group = stripSiteCodes(text(ticket.incidentTypeGroup) || text(fields.incidentTypeGroup)).slice(0, 120);
+    const productField = stripSiteCodes(text(ticket.product) || text(fields.product)).slice(0, 120);
+    let product = PRODUCT_UNKNOWN;
+    let source = 'none';
+    if (group) {
+      product = classifyProduct(group) || PRODUCT_UNKNOWN;
+      source = product === PRODUCT_UNKNOWN ? 'unrecognised-group' : 'incident-type-group';
+    } else if (productField) {
+      product = classifyProduct(productField) || PRODUCT_UNKNOWN;
+      source = product === PRODUCT_UNKNOWN ? 'none' : 'product-field';
+    }
+    const mentionText = [ticket.question, fields.question, fields.summary, ticket.summary, ticket.subject, ticket.outline,
+      fields.stepsToReplicate, fields.errorMessage, group ? productField : ''].map(text).join('\n');
+    const mentioned = PRODUCT_MENTIONS.filter((item) => item.match.test(mentionText)).map((item) => item.label);
+    const conflicts = product === PRODUCT_UNKNOWN ? [] : mentioned.filter((label) => label !== product);
+    return {
+      product,
+      source,
+      incidentTypeGroup: group,
+      productField,
+      confirmed: source === 'incident-type-group',
+      mentioned,
+      conflicts
+    };
+  }
 
   /** Detect the Sage product for the ticket. */
   function detectProduct(ticket = {}) {
-    const fields = extractFields(ticket.rawLoggedText || ticket.description);
-    const explicit = text(ticket.product) || text(fields.product);
-    const source = explicit || text(ticket.question) || fields.question || fields.summary || text(ticket.summary) || text(ticket.outline) || text(ticket.subject);
-    const found = PRODUCTS.find((product) => product.match.test(source));
-    return found ? found.label : 'Sage product not specified';
+    return resolveProduct(ticket).product;
   }
 
   const MODULES = [
@@ -202,6 +336,7 @@
     {
       id: 'third-party-compatibility',
       label: 'Third-party compatibility',
+      products: BOTH,
       module: 'si',
       mode: 'search',
       patterns: [{ re: /compatib(?:le|ility)|supported version|certif(?:ied|ication)/i, weight: 6 }, { re: /peresoft|orchid|technisoft|autosimply|third[- ]party|add[- ]?on/i, weight: 5 }],
@@ -216,7 +351,7 @@
     {
       id: 'people-mcs-password',
       label: 'Sage 300 People MCS password',
-      product: 'Sage 300 People',
+      products: [PEOPLE],
       module: 'people',
       mode: 'guide',
       patterns: [{ re: /\bmcs\b/i, weight: 6 }, { re: /password|credential|expired|locked out/i, weight: 4 }],
@@ -231,7 +366,7 @@
     {
       id: 'people-ess-mobile',
       label: 'ESS mobile registration',
-      product: 'Sage 300 People',
+      products: [PEOPLE],
       module: 'people',
       mode: 'guide',
       patterns: [{ re: /\bess\b|employee self service|self[- ]service/i, weight: 5 }, { re: /mobile|app|qr code|registration|register/i, weight: 4 }],
@@ -246,7 +381,7 @@
     {
       id: 'people-tax-paye',
       label: 'People tax / PAYE calculation',
-      product: 'Sage 300 People',
+      products: [PEOPLE],
       module: 'people',
       mode: 'guide',
       patterns: [{ re: /\bpaye\b|employee tax|tax difference|tax calculat|tax table/i, weight: 6 }, { re: /company rule|recalculat|tax year|irp5|emp201/i, weight: 3 }],
@@ -261,7 +396,7 @@
     {
       id: 'people-leave',
       label: 'People leave and accruals',
-      product: 'Sage 300 People',
+      products: [PEOPLE],
       module: 'people',
       mode: 'guide',
       patterns: [{ re: /leave (?:balance|accrual|cycle|bucket)|annual leave|sick leave/i, weight: 6 }],
@@ -275,6 +410,7 @@
     {
       id: 'bim-reporting',
       label: 'Business Insights / BIM reporting',
+      products: [CLOUD],
       module: 'si',
       mode: 'guide',
       patterns: [{ re: /\bbim\b|business insights/i, weight: 6 }, { re: /report|dashboard|view|drill/i, weight: 2 }],
@@ -288,6 +424,7 @@
     {
       id: 'bom-assembly',
       label: 'Bill of materials / assemblies',
+      products: [CLOUD],
       module: 'ic',
       mode: 'guide',
       patterns: [{ re: /bill of material|\bbom\b|assembl(?:y|ies|e)|batch production|kit/i, weight: 6 }],
@@ -302,6 +439,7 @@
     {
       id: 'tax-services',
       label: 'Tax Services setup',
+      products: [CLOUD],
       module: 'tax',
       mode: 'guide',
       patterns: [{ re: /tax services|tax authorit|tax group|tax class|tax rate|\bvat\b/i, weight: 6 }],
@@ -315,6 +453,7 @@
     {
       id: 'bank-reconciliation',
       label: 'Bank reconciliation',
+      products: [CLOUD],
       module: 'bank',
       mode: 'guide',
       patterns: [{ re: /bank reconcil|reconcil\w+ (?:the )?bank|bank statement|\bofx\b|unreconciled/i, weight: 6 }, { re: /out of balance|difference|does not balance/i, weight: 3 }],
@@ -329,6 +468,7 @@
     {
       id: 'gl-control-account',
       label: 'G/L control account posting',
+      products: [CLOUD],
       module: 'gl',
       mode: 'guide',
       patterns: [{ re: /control account/i, weight: 6 }, { re: /\bg\/l\b|general ledger|journal/i, weight: 3 }, { re: /vendor|customer|subledger/i, weight: 3 }],
@@ -342,6 +482,7 @@
     {
       id: 'gl-consolidation',
       label: 'G/L consolidations',
+      products: [CLOUD],
       module: 'gl',
       mode: 'guide',
       patterns: [{ re: /consolidat/i, weight: 6 }, { re: /\bg\/l\b|general ledger|company|inter[- ]?company/i, weight: 2 }],
@@ -355,6 +496,7 @@
     {
       id: 'ap-payments',
       label: 'A/P invoices and payments',
+      products: [CLOUD],
       module: 'ap',
       mode: 'guide',
       patterns: [{ re: /\ba\/p\b|accounts payable|vendor (?:invoice|payment|balance)|payment batch|remittance/i, weight: 5 }],
@@ -368,6 +510,7 @@
     {
       id: 'ar-history',
       label: 'A/R history and statements',
+      products: [CLOUD],
       module: 'ar',
       mode: 'guide',
       patterns: [{ re: /ar history|a\/r history|customer (?:statement|history)|aged receivable/i, weight: 6 }, { re: /\ba\/r\b|accounts receivable|receipt/i, weight: 3 }],
@@ -381,6 +524,7 @@
     {
       id: 'oe-orders',
       label: 'O/E orders and shipments',
+      products: [CLOUD],
       module: 'oe',
       mode: 'guide',
       patterns: [{ re: /\bo\/e\b|order entry|sales order|shipment|back ?order/i, weight: 5 }],
@@ -394,6 +538,7 @@
     {
       id: 'po-receipts',
       label: 'P/O receipts and invoices',
+      products: [CLOUD],
       module: 'po',
       mode: 'guide',
       patterns: [{ re: /\bp\/o\b|purchase order|receipt of goods|goods received|requisition/i, weight: 5 }],
@@ -407,6 +552,7 @@
     {
       id: 'ic-day-end',
       label: 'I/C Day End processing',
+      products: [CLOUD],
       module: 'ic',
       mode: 'guide',
       patterns: [{ re: /day ?end/i, weight: 6 }, { re: /inventory|costing|audit|i\/c/i, weight: 2 }],
@@ -420,6 +566,7 @@
     {
       id: 'reporting-connector',
       label: 'Reporting / SI Connector',
+      products: BOTH,
       module: 'si',
       mode: 'guide',
       patterns: [{ re: /sage intelligence|si connector|financial reporter|crystal report|report designer/i, weight: 6 }, { re: /report (?:layout|template|not printing)|export to excel/i, weight: 3 }],
@@ -433,6 +580,7 @@
     {
       id: 'printing-output',
       label: 'Report printing and print destination',
+      products: [CLOUD],
       mode: 'guide',
       patterns: [
         { re: /(?:does\s*n(?:o|')t|will not|won'?t|cannot|can'?t|unable to|fails? to|not)\s+print|no(?:t)? printing|print(?:ing)?\s+(?:error|fail\w*|problem|issue)|nothing prints|blank (?:print|page)/i, weight: 8 },
@@ -450,6 +598,7 @@
     {
       id: 'posting-errors',
       label: 'Batch posting error',
+      products: [CLOUD],
       mode: 'guide',
       patterns: [
         { re: /(?:cannot|can'?t|unable to|will not|won'?t|fails? to|error (?:when|while|on))\s*post\w*|post(?:ing)?\s+(?:error|fail\w*|problem|rejected)|batch (?:is )?(?:stuck|in error)/i, weight: 7 },
@@ -466,6 +615,7 @@
     {
       id: 'language-installation',
       label: 'Language / localisation installation',
+      products: [CLOUD],
       mode: 'search',
       patterns: [
         { re: /french|fran[cç]ais|spanish|language pack|multi[- ]?language|langue|localis(?:ation|ed)|localiz(?:ation|ed)/i, weight: 6 },
@@ -483,6 +633,7 @@
     {
       id: 'generic',
       label: 'General troubleshooting',
+      products: BOTH,
       module: 'unknown',
       mode: 'search',
       patterns: [],
@@ -559,15 +710,13 @@
    * reader can tell ticket evidence apart from a rules-based hypothesis.
    */
   function buildTicketFacts(context) {
-    const { fields, question, questionSource, product, errorCodes, attempted, thirdParty } = context;
+    const { fields, question, questionSource, errorCodes, attempted, thirdParty } = context;
     const facts = [];
     const recorded = question || fields.summary || context.summaryText;
     facts.push(recorded
       ? `${questionSource}: ${stripSiteCodes(recorded)}`
       : 'No answer to “How would you best describe this query?” is recorded on the ticket.');
-    facts.push(product === 'Sage product not specified'
-      ? 'No Sage product is recorded on the ticket.'
-      : `Product recorded on the ticket: ${product}.`);
+    facts.push(...describeProductScope(context.productScope));
     if (fields.version) facts.push(`Version recorded on the ticket: ${stripSiteCodes(fields.version)}`);
     if (fields.errorMessage) facts.push(`Error message recorded on the ticket: ${stripSiteCodes(fields.errorMessage)}`);
     if (errorCodes.length) facts.push(`Error code quoted in the query: ${errorCodes.join(', ')}`);
@@ -577,13 +726,32 @@
     return facts;
   }
 
+  /** Ticket facts that explain where the product classification came from. */
+  function describeProductScope(scope) {
+    const facts = [];
+    if (scope.source === 'incident-type-group') {
+      facts.push(`Incident Type Group recorded on the ticket: ${scope.incidentTypeGroup} → ${scope.product}. Suggestions and resources are limited to ${scope.product}.`);
+    } else if (scope.source === 'unrecognised-group') {
+      facts.push(`Incident Type Group “${scope.incidentTypeGroup}” is not recognised as Sage 300 Cloud or Sage 300 People, so no product-specific guidance or search is offered.`);
+    } else if (scope.source === 'product-field') {
+      facts.push(`No Incident Type Group was read from the ticket; product taken from the Product field: ${scope.product}.`);
+    } else {
+      facts.push('No Incident Type Group or Sage product is recorded on the ticket, so no product-specific guidance or search is offered.');
+    }
+    if (scope.conflicts.length) {
+      const recordedAs = scope.source === 'incident-type-group' ? 'the Incident Type Group is' : 'the product is recorded as';
+      facts.push(`Product contradiction: the ticket text mentions ${scope.conflicts.join(', ')}, but ${recordedAs} ${scope.product}. Resources stay limited to ${scope.product}, and no diagnosis is suggested until the product is confirmed.`);
+    }
+    return facts;
+  }
+
   /**
    * Precise questions built from what this specific query does not say.
    * They replace the old generic "confirm the product, reproduce, collect logs"
    * boilerplate, which was offered even when it answered nothing.
    */
   function buildQuestions(context) {
-    const { fields, question, product, errorCodes, attempted } = context;
+    const { fields, question, product, errorCodes, attempted, productScope } = context;
     const recorded = question || fields.summary || context.summaryText;
     const quote = shortQuote(recorded);
     const questions = [];
@@ -592,8 +760,11 @@
       questions.push('Ask which Sage product, version and update level is affected, and which screen or report the query is about.');
       return questions;
     }
-    if (product === 'Sage product not specified') {
-      questions.push(`Ask which Sage product, version and update level applies to “${quote}”; the ticket does not record it.`);
+    if (productScope && productScope.conflicts.length) {
+      questions.push(`Ask the customer to confirm whether “${quote}” is about ${product} or ${productScope.conflicts[0]}; the query text and the product logged on the ticket differ.`);
+    }
+    if (product === PRODUCT_UNKNOWN) {
+      questions.push(`Ask which Sage product (Sage 300 Cloud or Sage 300 People), version and update level applies to “${quote}”; the ticket does not confirm it.`);
     }
     if (/error|fail|cannot|can'?t|unable|does ?n(?:o|')t|not work|problem|issue|reject/i.test(recorded) && !fields.errorMessage && !errorCodes.length) {
       questions.push(`Ask for the exact on-screen message, or a screenshot, shown when “${quote}”.`);
@@ -614,7 +785,22 @@
    * matched. Retrieved results contribute a cited title and extract only —
    * article steps are never invented from a title.
    */
-  function buildSourcedGuidance(knowledge, sources) {
+  // URLs and slugs write product names with hyphens (sage-300-people).
+  const productText = (value) => text(value).replace(/[-_/+]+/g, ' ');
+
+  /** Products other than the ticket's product that a text names. */
+  function otherProductsIn(value, product) {
+    const source = productText(value);
+    return PRODUCT_MENTIONS.filter((item) => item.label !== product && item.match.test(source)).map((item) => item.label);
+  }
+
+  /** True when a text names the given product. */
+  function mentionsProduct(value, product) {
+    const entry = PRODUCT_MENTIONS.find((item) => item.label === product);
+    return Boolean(entry) && entry.match.test(productText(value));
+  }
+
+  function buildSourcedGuidance(knowledge, sources, product) {
     const items = [];
     (knowledge || []).forEach((entry) => {
       items.push({
@@ -627,11 +813,18 @@
       });
     });
     if (sources && sources.enabled !== false && Array.isArray(sources.results)) {
-      sources.results.slice(0, 3).forEach((result) => {
-        const title = text(result && result.title);
-        const url = text(result && result.url);
+      const known = Boolean(product) && product !== PRODUCT_UNKNOWN;
+      // A result naming another product is never offered, even when the same
+      // keywords appear in it.
+      const crossProduct = (result) => known
+        && otherProductsIn(`${text(result.title)} ${text(result.snippet)} ${text(result.url)}`, product).length > 0;
+      sources.results.filter((result) => result && !crossProduct(result)).slice(0, 3).forEach((result) => {
+        const title = text(result.title);
+        const url = text(result.url);
         if (!title || !/^https:\/\//i.test(url)) return;
         const snippet = text(result.snippet);
+        const productVerified = known && result.productVerified === true;
+        const caveat = productVerified ? '' : `Product not confirmed${known ? ` for ${product}` : ''}, so this is not product-specific advice. `;
         items.push({
           kind: 'retrieved',
           title,
@@ -639,10 +832,11 @@
           url,
           snippet,
           articleId: text(result.articleId),
+          productVerified,
           steps: [],
-          detail: snippet
+          detail: caveat + (snippet
             ? 'Retrieved title and extract only. Open the article and confirm its instructions before advising the customer.'
-            : 'Retrieved title only. Open the article and confirm its content before advising the customer.'
+            : 'Retrieved title only. Open the article and confirm its content before advising the customer.')
         });
       });
     }
@@ -680,58 +874,150 @@
    * Resource links
    * ------------------------------------------------------------------ */
 
-  // The Sage Knowledgebase search endpoint that used to be pre-filled
-  // (/portal/app/portlets/results/viewsearch.jsp) now returns
-  // "HTTP Status 404 – Not Found", and no replacement query endpoint could be
-  // verified from this environment. Rather than sending the agent to a broken
-  // URL, the Knowledgebase is offered as its home page (search on the site) and
-  // as a clearly labelled site-restricted Google search that the agent clicks
-  // itself. Google is never read automatically.
-  const SOURCE_LINKS = [
-    {
-      id: 'kb-za',
-      name: 'Sage Knowledgebase (ZA) home',
-      url: 'https://za-kb.sage.com/',
-      kind: 'home',
-      note: 'The Knowledgebase search cannot be pre-filled; open the site and search for the phrase above.'
-    },
-    {
-      id: 'kb-us',
-      name: 'Sage Knowledgebase (US) home',
-      url: 'https://us-kb.sage.com/',
-      kind: 'home',
-      note: 'The Knowledgebase search cannot be pre-filled; open the site and search for the phrase above.'
-    },
-    {
+  // Knowledgebase routes:
+  //  - /portal/app/portlets/results/viewsearch.jsp is retired (HTTP 404) and is
+  //    never used.
+  //  - /portal/app/portlets/results/viewsolution.jsp opens one article and needs
+  //    a real solutionid, so it is never constructed; it is only shown when a
+  //    retrieved result or a curated entry links to it.
+  //  - /portal/ss/?querytext=… is the search route. It is only pre-filled when a
+  //    verified, product-specific search alias exists (NetAdminSources.KB_SEARCH_ROUTES).
+  // Google is always a manual click-through and is never read automatically.
+  const GOOGLE = 'https://www.google.com/search?q=';
+  const COMMUNITY = 'https://communityhub.sage.com/search?q=';
+
+  // Search operators that keep each product's searches on that product,
+  // independent of the keyword phrase.
+  const PRODUCT_SEARCH = {
+    [CLOUD]: { kbSites: 'site:za-kb.sage.com OR site:us-kb.sage.com', constraint: '"Sage 300" -"Sage 300 People"', keyword: 'Sage 300 Cloud' },
+    [PEOPLE]: { kbSites: 'site:za-kb.sage.com', constraint: '"Sage 300 People"', keyword: 'Sage 300 People' }
+  };
+
+  function kbRoutesFor(product) {
+    const sources = root.NetAdminSources;
+    return sources && typeof sources.kbSearchRoutes === 'function' ? sources.kbSearchRoutes(product) : [];
+  }
+
+  /**
+   * Build the search links for the keyword phrase. The product constraint is
+   * added to each link separately; with no confirmed product nothing is
+   * presented as product-specific.
+   */
+  function buildResourceLinks(query, product) {
+    const phrase = text(query);
+    const scope = PRODUCT_SEARCH[product];
+    const links = [];
+    const quoted = `“${phrase}”`;
+    if (scope) {
+      const routes = kbRoutesFor(product);
+      routes.forEach((route) => links.push({
+        id: `${route.sourceId}-search`,
+        name: `${route.name} — ${product} search`,
+        title: `${route.name} · ${product} search: ${phrase}`,
+        url: root.NetAdminSources.buildKbSearchUrl(route, phrase),
+        kind: 'search',
+        productScoped: true,
+        note: `Pre-filled Knowledgebase search limited to the ${product} search alias (${route.alias}). Open each article and confirm it applies to ${product}.`
+      }));
+      const prefilled = routes.map((route) => route.sourceId);
+      [['kb-za', 'Sage Knowledgebase (ZA)', 'https://za-kb.sage.com/'], ['kb-us', 'Sage Knowledgebase (US)', 'https://us-kb.sage.com/']]
+        .filter(([id]) => !prefilled.includes(id) && (id === 'kb-za' || product === CLOUD))
+        .forEach(([id, name, url]) => links.push({
+          id,
+          name: `${name} home`,
+          title: `${name} — select ${product} and search for ${quoted}`,
+          url,
+          kind: 'home',
+          productScoped: false,
+          note: `No verified ${product} search alias is configured for this Knowledgebase, so the search cannot be pre-filled. Open it, filter on ${product} and search for the phrase above.`
+        }));
+      links.push({
+        id: 'kb-site-search',
+        name: `Sage Knowledgebase via Google site search — ${product} (manual click-through)`,
+        title: `Sage Knowledgebase via Google site search — ${product}: ${phrase}`,
+        url: `${GOOGLE}${encodeURIComponent(`${scope.kbSites} ${scope.constraint} ${phrase}`)}`,
+        kind: 'manual',
+        productScoped: false,
+        note: `Google restricted to the Sage Knowledgebase and to ${product} wording. Nothing is retrieved automatically; confirm the product on each article.`
+      });
+      links.push({
+        id: 'community',
+        name: 'Sage Community Hub',
+        title: `Sage Community Hub · ${product}: ${phrase}`,
+        url: `${COMMUNITY}${encodeURIComponent(`${scope.keyword} ${phrase}`)}`,
+        kind: 'search',
+        productScoped: false,
+        note: `Keyword search including the product name; Community Hub results are not filtered by product, so confirm each thread is about ${product}.`
+      });
+      links.push({
+        id: 'google',
+        name: 'Google (opens in a new tab)',
+        title: `Google · ${product}: ${phrase}`,
+        url: `${GOOGLE}${encodeURIComponent(`${scope.constraint} ${phrase}`)}`,
+        kind: 'manual',
+        productScoped: false,
+        note: 'Manual click-through only; Google is never read automatically.'
+      });
+      return links;
+    }
+    const unconfirmed = 'Product not confirmed (Incident Type Group missing or not recognised), so no product-filtered search is offered';
+    [['kb-za', 'Sage Knowledgebase (ZA)', 'https://za-kb.sage.com/'], ['kb-us', 'Sage Knowledgebase (US)', 'https://us-kb.sage.com/']]
+      .forEach(([id, name, url]) => links.push({
+        id,
+        name: `${name} home`,
+        title: `${name} — search for ${quoted} on the site`,
+        url,
+        kind: 'home',
+        productScoped: false,
+        note: `${unconfirmed}. The Knowledgebase search cannot be pre-filled; confirm the product first.`
+      }));
+    links.push({
       id: 'kb-site-search',
       name: 'Sage Knowledgebase via Google site search (manual click-through)',
-      template: 'https://www.google.com/search?q=',
-      site: 'site:za-kb.sage.com OR site:us-kb.sage.com',
+      title: `Sage Knowledgebase via Google site search: ${phrase}`,
+      url: `${GOOGLE}${encodeURIComponent(`site:za-kb.sage.com OR site:us-kb.sage.com ${phrase}`)}`,
       kind: 'manual',
-      note: 'Opens Google restricted to the Sage Knowledgebase sites. Nothing is retrieved automatically.'
-    },
-    { id: 'community', name: 'Sage Community Hub', template: 'https://communityhub.sage.com/search?q=', kind: 'search' },
-    { id: 'google', name: 'Google (opens in a new tab)', template: 'https://www.google.com/search?q=', kind: 'manual', note: 'Manual click-through only; Google is never read automatically.' }
-  ];
-
-  /** Build the search links for a query, flagging which ones are pre-filled. */
-  function buildResourceLinks(query, product) {
-    const phrase = [product && product !== 'Sage product not specified' ? product : 'Sage', query].filter(Boolean).join(' ').trim();
-    return SOURCE_LINKS.map((source) => {
-      const searchPhrase = source.site ? `${source.site} ${phrase}` : phrase;
-      const url = source.template ? `${source.template}${encodeURIComponent(searchPhrase)}` : source.url;
-      const title = source.kind === 'home' ? `${source.name} — search for “${phrase}” on the site` : `${source.name}: ${phrase}`;
-      return { id: source.id, title, name: source.name, url, kind: source.kind, note: text(source.note) };
+      productScoped: false,
+      note: `${unconfirmed}. Nothing is retrieved automatically.`
     });
+    links.push({
+      id: 'community',
+      name: 'Sage Community Hub',
+      title: `Sage Community Hub: ${phrase}`,
+      url: `${COMMUNITY}${encodeURIComponent(phrase)}`,
+      kind: 'search',
+      productScoped: false,
+      note: `${unconfirmed}.`
+    });
+    links.push({
+      id: 'google',
+      name: 'Google (opens in a new tab)',
+      title: `Google: Sage ${phrase}`,
+      url: `${GOOGLE}${encodeURIComponent(`Sage ${phrase}`)}`,
+      kind: 'manual',
+      productScoped: false,
+      note: 'Manual click-through only; Google is never read automatically.'
+    });
+    return links;
   }
 
   /* ------------------------------------------------------------------ *
    * Topic selection
    * ------------------------------------------------------------------ */
 
+  /**
+   * Every rule is scoped to the products its steps were written for. With an
+   * unconfirmed product only rules written for both products can apply, so
+   * product-specific guidance is never offered on a guess.
+   */
+  function ruleAppliesTo(rule, product) {
+    const products = rule.products || [];
+    return product === PRODUCT_UNKNOWN ? BOTH.every((item) => products.includes(item)) : products.includes(product);
+  }
+
   function scoreRule(rule, haystack, product, moduleId) {
     if (!rule.patterns.length) return 0;
-    if (rule.product && product !== 'Sage product not specified' && rule.product !== product) return 0;
+    if (!ruleAppliesTo(rule, product)) return 0;
     if (product === 'Sage 300 People' && rule.module && !['people', 'si'].includes(rule.module) && rule.id !== 'third-party-compatibility') return 0;
     if (rule.patterns.length > 1 && !rule.patterns[0].re.test(haystack)) return 0;
     if (rule.id === 'third-party-compatibility' && !rule.patterns[1].re.test(haystack)) return 0;
@@ -745,7 +1031,7 @@
       }
     }
     if (!matched) return 0;
-    if (rule.product && rule.product === product) score += 2;
+    if (rule.products.length === 1 && rule.products[0] === product) score += 2;
     if (rule.module && rule.module === moduleId) score += 1;
     return score;
   }
@@ -753,6 +1039,12 @@
   /* ------------------------------------------------------------------ *
    * Customer-safe reply
    * ------------------------------------------------------------------ */
+
+  /** Customer and contact name words, removed from every search phrase. */
+  function customerWords(ticket) {
+    return [ticket.customer && ticket.customer.contactName, ticket.customer && ticket.customer.companyName, ticket.contactName, ticket.customerName]
+      .map(text).join(' ').split(/\s+/).filter((word) => word.length > 1);
+  }
 
   function safeName(ticket) {
     const name = text(ticket.customer && ticket.customer.contactName) || text(ticket.contactName) || text(ticket.customerName);
@@ -780,7 +1072,8 @@
 
   function buildReply(context, guidance, sourceState) {
     const { name, reference, summaryLine, areaLine, attemptedLine, steps, questions, mode } = context;
-    const items = Array.isArray(guidance) ? guidance.filter((item) => item.kind === 'retrieved') : [];
+    // Only results confirmed for the ticket's product are put to the customer.
+    const items = Array.isArray(guidance) ? guidance.filter((item) => item.kind === 'retrieved' && item.productVerified) : [];
     const lines = [];
     lines.push(`Good day ${name}`);
     lines.push('');
@@ -804,7 +1097,7 @@
       lines.push('');
       lines.push('Official Sage material that matches your query (we will confirm the detail in the article before advising a change):');
       items.forEach((item) => lines.push(`- ${item.title} (${item.source}): ${item.url}`));
-    } else if (sourceState && sourceState.enabled && !sourceState.available) {
+    } else if (sourceState && sourceState.enabled) {
       lines.push('');
       lines.push('No official Sage article could be matched to this query at the moment, so the checks above come from the recorded query and our local support rules only.');
     }
@@ -825,7 +1118,7 @@
    */
   function applySources(result, sources) {
     if (!result || typeof result !== 'object' || !result.replyContext) return result;
-    const guidance = buildSourcedGuidance(result.knowledge, sources);
+    const guidance = buildSourcedGuidance(result.knowledge, sources, result.product);
     const state = describeSourceState(sources);
     return Object.assign({}, result, {
       sourcedGuidance: guidance,
@@ -856,15 +1149,19 @@
     const summary = summaryText || 'No “Summary of the query” provided.';
     const cleanedSummary = stripSiteCodes(summary).replace(/\s+/g, ' ');
     const querySummary = cleanedSummary.length > 280 ? `${cleanedSummary.slice(0, 280)}…` : cleanedSummary;
-    const product = detectProduct(ticket);
+    const productScope = resolveProduct(ticket, fields);
+    const product = productScope.product;
+    const contradiction = productScope.conflicts.length > 0;
     const intent = summaryText;
     let moduleInfo = detectModule(intent);
-    const productConflict = product === 'Sage 300 People' && !['unknown', 'people', 'si'].includes(moduleInfo.id);
+    const productConflict = contradiction || (product === PEOPLE && !['unknown', 'people', 'si'].includes(moduleInfo.id));
     const thirdParty = detectThirdParty(intent);
 
     let best = RULES[RULES.length - 1];
     let bestScore = 0;
-    RULES.forEach((rule) => {
+    // A query that names a different product than the one logged gets no
+    // rules-based diagnosis until the product is confirmed.
+    if (!contradiction) RULES.forEach((rule) => {
       const score = scoreRule(rule, intent, product, moduleInfo.id);
       if (score > bestScore) {
         best = rule;
@@ -884,7 +1181,7 @@
     }
 
     const errorCodes = extractErrorCodes(intent);
-    const factContext = { fields, question, questionSource, summaryText, product, errorCodes, attempted, thirdParty };
+    const factContext = { fields, question, questionSource, summaryText, product, productScope, errorCodes, attempted, thirdParty };
     const facts = buildTicketFacts(factContext);
     const questions = buildQuestions(factContext);
     const hypotheses = ruleSteps.map((step) => ({ text: step, source: `Local rule: ${best.label}` }));
@@ -892,14 +1189,15 @@
     // reply ask for the missing context instead of repeating boilerplate.
     const stepList = hypotheses.length ? hypotheses.map((item) => item.text) : questions.slice();
 
-    const query = buildSearchPhrase(intent) || 'Sage support';
+    const query = buildSearchPhrase(intent, { exclude: customerWords(ticket) }) || 'support';
     const links = buildResourceLinks(query, product);
 
-    const knowledge = matchKnowledge(options.knowledge || [], { haystack: intent, product, moduleId: moduleInfo.id, topicId: best.id });
-    const guidance = buildSourcedGuidance(knowledge, options.sources);
+    const knowledge = contradiction ? [] : matchKnowledge(options.knowledge || [], { haystack: intent, product, moduleId: moduleInfo.id, topicId: best.id });
+    const guidance = buildSourcedGuidance(knowledge, options.sources, product);
     const sourceState = describeSourceState(options.sources);
 
     const evidence = [];
+    if (productScope.incidentTypeGroup) evidence.push(`Incident Type Group: ${productScope.incidentTypeGroup}`);
     if (question) evidence.push(`${questionSource}: ${stripSiteCodes(question)}`);
     else if (fields.summary) evidence.push(`Summary field: ${stripSiteCodes(fields.summary)}`);
     if (fields.stepsToReplicate) evidence.push(`Steps to replicate: ${stripSiteCodes(fields.stepsToReplicate)}`);
@@ -941,12 +1239,14 @@
     return {
       ticketId: text(ticket.incidentReference) || text(ticket.ticketId) || 'Unknown ticket',
       product,
+      productScope,
       module: moduleInfo,
       summary,
       querySummary,
       questionSource,
       fields,
       query,
+      searchTerms: normalizeTerms(query),
       errorCodes,
       thirdParty,
       topic,
@@ -958,7 +1258,7 @@
       analysis: {
         rootCause: {
           content: best.id === 'generic'
-            ? `${productConflict ? 'The selected product and described workflow may conflict. ' : ''}The recorded query does not provide enough evidence to identify a specific cause or module. Confirm the affected workflow before applying any module-specific guidance.`
+            ? `${contradiction ? `The query mentions ${productScope.conflicts.join(', ')} but the ticket is logged for ${product}; the product must be confirmed before any guidance is applied. ` : productConflict ? 'The selected product and described workflow may conflict. ' : ''}The recorded query does not provide enough evidence to identify a specific cause or module. Confirm the affected workflow before applying any module-specific guidance.`
             : `Suggested area: ${best.label}. ${best.cause} This is a rules-based suggestion, not a confirmed root cause.`,
           confidence,
           evidence
@@ -995,7 +1295,10 @@
     const scored = [];
     entries.forEach((entry, index) => {
       if (!entry || typeof entry !== 'object') return;
-      if (entry.product && context.product !== 'Sage product not specified' && entry.product !== context.product) return;
+      // Entries must be scoped to the ticket's confirmed product. Unscoped
+      // entries, and every entry when the product is not confirmed, are skipped.
+      const products = entryProducts(entry);
+      if (context.product === PRODUCT_UNKNOWN || !products.includes(context.product)) return;
       let score = 0;
       const matchedOn = [];
       (entry.keywords || []).forEach((keyword) => {
@@ -1014,7 +1317,7 @@
       });
       if (entry.topicId && entry.topicId === context.topicId) score += 4;
       if (entry.module && entry.module === context.moduleId) score += 2;
-      if (entry.product && entry.product === context.product) score += 2;
+      if (products.length === 1) score += 2;
       const overlap = (entry.phrases || []).filter((phrase) => terms.includes(lower(phrase))).length;
       score += overlap;
       // Product or module alone is never enough: an entry must match the topic
@@ -1025,6 +1328,7 @@
         id: text(entry.id) || `entry-${index}`,
         title: text(entry.title),
         product: text(entry.product),
+        products,
         module: text(entry.module),
         likelyCause: text(entry.likelyCause),
         steps: (entry.steps || []).map(text).filter(Boolean),
@@ -1041,6 +1345,12 @@
       delete copy.index;
       return copy;
     });
+  }
+
+  function entryProducts(entry) {
+    const listed = Array.isArray(entry.products) ? entry.products.map(text).filter(Boolean) : [];
+    if (listed.length) return listed;
+    return text(entry.product) ? [text(entry.product)] : [];
   }
 
   function keywordMatch(haystack, keyword) {
@@ -1156,7 +1466,12 @@
     if (/\b(attachment|evidence)\b/i.test(question)) {
       return current.analysis.rootCause.evidence.join('; ') || 'No local evidence was captured for this ticket.';
     }
-    const prompted = analyseTicket({ subject: question, description: question }, options);
+    const prompted = analyseTicket({
+      subject: question,
+      description: question,
+      incidentTypeGroup: current.productScope.incidentTypeGroup,
+      product: current.productScope.productField
+    }, options);
     const context = prompted.topic.id === 'generic' ? current : prompted;
     return `${context.topic.label}: ${context.topic.steps.join(' ')} These are suggested checks from the offline rules, not a confirmed diagnosis.`;
   }
@@ -1169,6 +1484,11 @@
     normalizeTerms,
     extractErrorCodes,
     detectProduct,
+    resolveProduct,
+    classifyProduct,
+    extractIssueCodes,
+    otherProductsIn,
+    mentionsProduct,
     detectModule,
     detectThirdParty,
     detectAlreadyAttempted,
@@ -1180,6 +1500,8 @@
     rankQueue,
     chat,
     RULES,
-    MODULE_GUIDES
+    MODULE_GUIDES,
+    PRODUCT_UNKNOWN,
+    PRODUCT_LABELS: Object.freeze(BOTH.slice())
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

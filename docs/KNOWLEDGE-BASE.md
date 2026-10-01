@@ -26,7 +26,8 @@
 |---|---|---|
 | `id` | yes | Unique. Duplicates are ignored. |
 | `title` | yes | Shown as the entry heading. |
-| `product` | no | `Sage 300 People` or `Sage 300 Cloud`. A different product lowers the score. |
+| `product` | yes (or `products`) | `Sage 300 People` or `Sage 300 Cloud`. The entry is only offered for tickets whose Incident Type Group (or, when no group is recorded, Product field) resolves to that product. |
+| `products` | no | Use instead of `product` for an entry that genuinely applies to both, e.g. `["Sage 300 Cloud", "Sage 300 People"]`. Entries with neither `product` nor `products` are never offered, and no entry is offered while the product is unconfirmed or contradicted by the query. |
 | `module` | no | One of `gl, ap, ar, ic, oe, po, bank, tax, si, people`. |
 | `topicId` | no | A rule id from `extension/analyze.js` (`RULES`). Matching the topic is the strongest signal. |
 | `keywords` | no | Phrases matched against the ticket text (weight 3 each). |
@@ -35,7 +36,7 @@
 | `likelyCause` | yes | Presented as suggested guidance, never as a confirmed answer. |
 | `steps` | yes | Safe, non-destructive checks. |
 | `alreadyDonePatterns` | no | Documentation of work the rules engine already prunes. |
-| `links` | no | **Must** be `https://` URLs; anything else is dropped when loading. Do not use `…/portal/app/portlets/results/viewsearch.jsp?q=…`: that Knowledgebase search endpoint returns HTTP 404. Link to the Knowledgebase home page or to an article you have actually opened. |
+| `links` | no | **Must** be `https://` URLs; anything else is dropped when loading. Do not use `…/portal/app/portlets/results/viewsearch.jsp?q=…`: that Knowledgebase search endpoint returns HTTP 404. Link to the Knowledgebase home page or to an article (`…/viewsolution.jsp?solutionid=…`) you have actually opened — never type or guess a solution ID. |
 | `source` | no | Shown under the entry so the reader knows where it came from. |
 
 ## Rules for new entries

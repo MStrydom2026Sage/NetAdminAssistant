@@ -1,4 +1,4 @@
-# NetAdmin Assistant v0.6.1
+# NetAdmin Assistant v0.7.0
 
 **Offline Sage 300 support ticket analyser for NetAdmin**
 
@@ -46,7 +46,9 @@ When no rule matches, no steps are invented. The panel and the draft reply inste
 
 Live retrieval is **off by default** and is enabled from the **Local data** section of the side panel.
 
-- The Sage Knowledgebase search endpoint that was used here (`/portal/app/portlets/results/viewsearch.jsp`) now returns **HTTP Status 404 – Not Found**, and no replacement query endpoint could be verified. The Knowledgebase is therefore **not** retrieved automatically: it is reported as unavailable, and its home page plus a clearly labelled site-restricted Google search are offered as manual click-throughs.
+- The **Incident Type Group** on the ticket (for example `Support-Sage 300 Cloud`) decides the product. Only that product's rules, knowledge entries, search links and live results are used; a different product mentioned in the ticket text is flagged as a contradiction, and a missing or unrecognised group means no product-specific guidance is given.
+- The search phrase is built from the recorded question only (privacy-sanitised, product prefix removed) and pre-fills the Sage Knowledgebase search, Community Hub and Google links.
+- The retired `viewsearch.jsp` endpoint (HTTP 404) is no longer used. Sage 300 Cloud tickets get a pre-filled `us-kb.sage.com/portal/ss/?querytext=…&searchaliases=custom_us_threehundred;` search. The ZA Cloud alias and any People alias are not known in full, so those Knowledgebases are offered as clearly labelled, non-pre-filled entry points. `viewsolution.jsp` article links are only shown when a real solution ID was retrieved.
 - Only `communityhub.sage.com` is requested automatically, using the search phrase the rules engine generates from the ticket. `za-kb.sage.com` and `us-kb.sage.com` stay on the allowlist so their links remain renderable.
 - HTTP errors and branded 404 / unsupported pages are detected, so a broken source is reported as unavailable instead of being parsed.
 - The agent's existing authenticated browser session is used; no credentials are stored.
@@ -111,4 +113,4 @@ docs/
 - If the question field is absent or ambiguous, the displayed source and clarifying checks make this visible; no diagnosis of the unseen ticket can be inferred from screenshots alone.
 - Past-ticket learning is stored locally but is not used to diagnose the current ticket.
 - Live Sage retrieval depends on the signed-in session and the current page markup; it fails gracefully.
-- Sage Knowledgebase retrieval is reported as unavailable: the old search endpoint returns HTTP 404 and no replacement endpoint could be verified from this environment. The Knowledgebase links in the panel are manual click-throughs and are labelled as such.
+- The Sage Knowledgebase routes and search aliases could not be validated live from the build environment (the hosts were unreachable). The US Sage 300 Cloud alias comes from a working URL supplied by the user; no ZA or Sage 300 People alias is used until it is confirmed in full. See [docs/SAGE-SOURCES.md](docs/SAGE-SOURCES.md).

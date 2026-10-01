@@ -14,7 +14,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const clearCacheBtn = document.getElementById('clearCacheBtn');
   const resultsContainer = document.getElementById('results');
 
-  setStatus('Offline rules analysis ready', 'healthy');
   await loadSettings();
   await refreshHistoryCount();
 
@@ -51,11 +50,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
+const STATUS_VISIBLE_MS = 5000;
+let statusTimer = null;
+
+/**
+ * Short-lived feedback for an action (cache cleared, reply copied, clipboard
+ * error, ...). The status area is hidden at rest so it takes no space.
+ */
 function setStatus(message, state) {
   const status = document.getElementById('backendStatus');
   if (!status) return;
+  if (statusTimer) clearTimeout(statusTimer);
   status.className = `status-indicator ${state || ''}`.trim();
-  status.textContent = message;
+  status.textContent = message || '';
+  status.hidden = !message;
+  if (message) {
+    statusTimer = setTimeout(() => {
+      status.hidden = true;
+      status.textContent = '';
+      statusTimer = null;
+    }, STATUS_VISIBLE_MS);
+  }
 }
 
 function loadSettings() {
@@ -135,7 +150,7 @@ function refreshSources(container, silent) {
     query: currentAnalysis.query,
     product: currentAnalysis.product,
     moduleLabel: currentAnalysis.module?.label,
-    terms: currentAnalysis.questionSource === 'Not provided' ? [] : NetAdminAnalyzer.normalizeTerms(currentAnalysis.summary)
+    terms: currentAnalysis.questionSource === 'Not provided' ? [] : (currentAnalysis.searchTerms || NetAdminAnalyzer.normalizeTerms(currentAnalysis.query))
   };
   chrome.runtime.sendMessage({ action: 'fetchSources', data: payload }, (response) => {
     if (chrome.runtime.lastError || !response?.success) return renderSources(null);
@@ -193,7 +208,9 @@ function renderAnalysis(data, fromCache, container) {
     html += '</div></div>';
   }
 
-  html += `<div class="analysis-section search"><h3>🔎 Sage searches</h3><div class="search-query"><strong>${escapeHtml(data.query)}</strong><div class="search-sources">`
+  html += `<div class="analysis-section search"><h3>🔎 Sage searches</h3><div class="search-query">`
+    + `<p class="confidence-text">Search phrase (from the recorded query):</p><strong>${escapeHtml(data.query)}</strong>`
+    + `<p class="confidence-text">${escapeHtml(describeProductFilter(data))}</p><div class="search-sources">`
     + `<div class="source"><span class="source-name">Search links (click to open)</span><ul>${topic.links.map((link) => `<li>${safeLink(link)}${link.note ? `<span class="confidence-text"> — ${escapeHtml(link.note)}</span>` : ''}</li>`).join('')}</ul></div>`
     + '</div></div><div id="liveSources"></div></div>';
 
@@ -208,6 +225,19 @@ function renderAnalysis(data, fromCache, container) {
   renderSources(null);
 }
 
+/** How the product constraint on the searches was decided. */
+function describeProductFilter(data) {
+  const scope = data.productScope || {};
+  if (scope.source === 'incident-type-group') return `Product filter: ${data.product} (Incident Type Group: ${scope.incidentTypeGroup}).`;
+  if (scope.source === 'product-field') return `Product filter: ${data.product} (Product field; no Incident Type Group was read).`;
+  if (scope.source === 'unrecognised-group') return `No product filter: Incident Type Group “${scope.incidentTypeGroup}” is not recognised as Sage 300 Cloud or Sage 300 People.`;
+  return 'No product filter: the Incident Type Group was not found on the ticket.';
+}
+
+function productBadge(item) {
+  return item.productVerified ? '' : ' <span class="badge">Product not confirmed</span>';
+}
+
 /** Guidance that can be attributed to a source, with the source next to it. */
 function renderSourcedGuidance(data) {
   const guidance = (data.sourcedGuidance || []).filter((item) => item.kind === 'retrieved');
@@ -219,7 +249,7 @@ function renderSourcedGuidance(data) {
   }
   html += '<p class="confidence-text">Retrieved from the official Sage sources. Titles and extracts only — open each article to confirm its instructions.</p><div class="search-sources">';
   guidance.forEach((item) => {
-    html += `<div class="source"><span class="source-name">${safeLink(item)}</span>`
+    html += `<div class="source"><span class="source-name">${safeLink(item)}${productBadge(item)}</span>`
       + `${item.snippet ? `<div class="content">${escapeHtml(item.snippet)}</div>` : ''}`
       + `<p class="confidence-text">${escapeHtml(item.source)} · ${escapeHtml(item.detail)}</p></div>`;
   });
@@ -252,13 +282,17 @@ function renderSources(sources) {
     target.innerHTML = '<p class="confidence-text">Live Sage Knowledgebase and Community Hub retrieval is switched off. The search links above are click-through only.</p>';
     return;
   }
-  if (!sources.results?.length) {
+  // Defence in depth: a result naming another product is never listed.
+  const product = currentAnalysis?.product;
+  const results = (sources.results || []).filter((result) => !NetAdminAnalyzer.PRODUCT_LABELS.includes(product)
+    || !NetAdminAnalyzer.otherProductsIn(`${result.title || ''} ${result.snippet || ''} ${result.url || ''}`, product).length);
+  if (!results.length) {
     target.innerHTML = `<p class="confidence-text">No live result could be read${state.unavailable?.length ? ` (${escapeHtml(describeUnavailable(state.unavailable))})` : ''}. Use the search links above instead.</p>`;
     return;
   }
   const stamp = sources.fetchedAt ? new Date(sources.fetchedAt).toLocaleTimeString() : '';
   target.innerHTML = `<div class="source"><span class="source-name">Live Sage results${stamp ? ` · retrieved ${escapeHtml(stamp)}` : ''}</span><ul>`
-    + sources.results.map((result) => `<li>${safeLink(result)}${result.articleId ? ` <span class="badge">ID ${escapeHtml(result.articleId)}</span>` : ''}${result.snippet ? `<div class="content">${escapeHtml(result.snippet)}</div>` : ''}<p class="confidence-text">${escapeHtml(result.source)}</p></li>`).join('')
+    + results.map((result) => `<li>${safeLink(result)}${productBadge(result)}${result.articleId ? ` <span class="badge">ID ${escapeHtml(result.articleId)}</span>` : ''}${result.snippet ? `<div class="content">${escapeHtml(result.snippet)}</div>` : ''}<p class="confidence-text">${escapeHtml(result.source)}</p></li>`).join('')
     + `</ul>${state.unavailable?.length ? `<p class="confidence-text">Unavailable: ${escapeHtml(describeUnavailable(state.unavailable))}</p>` : ''}</div>`;
 }
 

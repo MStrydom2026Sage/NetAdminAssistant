@@ -87,7 +87,7 @@ test('the retired knowledgebase search endpoint is never requested again', () =>
   assert.equal(kb.length, 2);
   for (const source of kb) {
     assert.equal(source.search, '');
-    assert.match(source.unavailableReason, /404/);
+    assert.match(source.unavailableReason, /no verified product-specific Knowledgebase search alias/);
     assert.match(source.home, /^https:\/\/[a-z]{2}-kb\.sage\.com\/$/);
   }
 });
@@ -98,7 +98,7 @@ test('knowledgebase sources are reported as unavailable instead of being fetched
   assert.ok(names.includes('Sage Knowledgebase (ZA)'));
   assert.ok(names.includes('Sage Knowledgebase (US)'));
   const kb = result.unavailable.find((item) => item.name === 'Sage Knowledgebase (ZA)');
-  assert.match(kb.reason, /404/);
+  assert.match(kb.reason, /product is not confirmed/);
   assert.equal(kb.url, 'https://za-kb.sage.com/');
   assert.deepEqual(Array.from(result.results), []);
 });

@@ -30,6 +30,7 @@ test('reads a question and multiline answer rendered in NetAdmin table cells', (
   assert.equal(readMarkup([label]), answer);
   const analyzed = loadAnalyzer().analyseTicket({
     question: readMarkup([label]), questionSource: 'How would you best describe this query?',
+    incidentTypeGroup: 'Support-Sage 300 Cloud',
     subject: 'Error 900987 G/L control account 2026'
   });
   assert.equal(analyzed.topic.id, 'bank-reconciliation');
@@ -50,4 +51,44 @@ test('toolbar action has no popup and uses the existing side panel', () => {
   assert.equal(manifest.action.default_popup, undefined);
   assert.equal(manifest.side_panel.default_path, 'html/sidepanel.html');
   assert.match(fs.readFileSync(path.join(EXTENSION_DIR, 'background.js'), 'utf8'), /chrome\.action\.onClicked/);
+});
+
+function readGroup(elements, controls = [], ids = {}) {
+  const document = {
+    readyState: 'loading',
+    addEventListener() {},
+    getElementById(id) { return ids[id] || null; },
+    querySelectorAll(selector) {
+      if (selector.startsWith('label, th')) return elements;
+      if (selector.startsWith('select[')) return controls;
+      return [];
+    }
+  };
+  const context = vm.createContext({ document, chrome: { runtime: { onMessage: { addListener() {} } } }, console });
+  vm.runInContext(source, context);
+  return context.readIncidentTypeGroup();
+}
+
+const node = (textContent, extra = {}) => Object.assign({ textContent, getAttribute: () => null }, extra);
+
+test('reads the Incident Type Group from label/value, bound control, inline and named-control markup', () => {
+  // label cell followed by a display cell
+  assert.equal(readGroup([node('Incident Type Group', { nextElementSibling: node(' Support-Sage 300 Cloud ') })]), 'Support-Sage 300 Cloud');
+  // label bound to a select: the option text is used, not its id value
+  const select = { tagName: 'SELECT', value: '17', selectedOptions: [{ text: 'Support-Sage 300 People' }] };
+  assert.equal(readGroup([node('Incident type group:', { getAttribute: (name) => (name === 'for' ? 'grp' : null) })], [], { grp: select }), 'Support-Sage 300 People');
+  // value and label rendered in one element, followed by another field
+  assert.equal(readGroup([node('Incident Type Group: Support-Sage 300 Cloud Priority: High')]), 'Support-Sage 300 Cloud');
+  // named control with no visible label
+  const named = { value: '9', selectedOptions: [{ text: 'Support-Sage 300 Cloud' }], getAttribute: (name) => (name === 'name' ? 'IncidentTypeGroupId' : null) };
+  assert.equal(readGroup([], [named]), 'Support-Sage 300 Cloud');
+  // placeholders and missing values are not a group
+  const placeholder = { tagName: 'SELECT', selectedOptions: [{ text: '-- Please select --' }] };
+  assert.equal(readGroup([node('Incident Type Group *', { nextElementSibling: placeholder })]), '');
+  assert.equal(readGroup([]), '');
+});
+
+test('the scraped Incident Type Group is passed to the analyzer as an explicit field', () => {
+  assert.match(source, /incidentTypeGroup: ''/);
+  assert.match(source, /ticketData\.incidentTypeGroup = readIncidentTypeGroup\(\);/);
 });

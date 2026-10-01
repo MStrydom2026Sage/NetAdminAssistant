@@ -16,13 +16,16 @@
   const MAX_RESULTS = 5;
   const MAX_SNIPPET = 220;
 
-  // The Knowledgebase search endpoint that was used here
-  // (/portal/app/portlets/results/viewsearch.jsp) now answers with
-  // "HTTP Status 404 - Not Found". No replacement query endpoint has been
-  // verified, so the Knowledgebase is configured with no search URL: it is
-  // reported as unavailable for retrieval instead of being fetched, and its
-  // home page is offered as a manual click-through. Its host stays on the
-  // allowlist so that Knowledgebase links remain renderable and parsable.
+  // Sage Knowledgebase routes:
+  //  - /portal/app/portlets/results/viewsearch.jsp is retired and answers
+  //    "HTTP Status 404 - Not Found". It is never requested.
+  //  - /portal/app/portlets/results/viewsolution.jsp?solutionid=… is a single
+  //    article. It needs a real solution ID, so it is only ever taken from a
+  //    retrieved page, never constructed.
+  //  - /portal/ss/?querytext=…&tabid=2&searchaliases=… is the search route. It
+  //    is only used with a product-specific search alias whose full value is
+  //    known (KB_SEARCH_ROUTES). Without one, the Knowledgebase has no generic
+  //    `search` URL and is reported as unavailable instead of being fetched.
   const SOURCES = [
     {
       id: 'kb-za',
@@ -30,7 +33,7 @@
       host: 'za-kb.sage.com',
       home: 'https://za-kb.sage.com/',
       search: '',
-      unavailableReason: 'the Knowledgebase search endpoint was retired and returns HTTP 404; open the Knowledgebase and search there'
+      unavailableReason: 'no verified product-specific Knowledgebase search alias is configured; open the Knowledgebase and search there'
     },
     {
       id: 'kb-us',
@@ -38,19 +41,63 @@
       host: 'us-kb.sage.com',
       home: 'https://us-kb.sage.com/',
       search: '',
-      unavailableReason: 'the Knowledgebase search endpoint was retired and returns HTTP 404; open the Knowledgebase and search there'
+      unavailableReason: 'no verified product-specific Knowledgebase search alias is configured; open the Knowledgebase and search there'
     },
     { id: 'community', name: 'Sage Community Hub', host: 'communityhub.sage.com', home: 'https://communityhub.sage.com/', search: 'https://communityhub.sage.com/search?q=' }
   ];
+
+  // Product-scoped Knowledgebase search aliases. Only an alias whose complete
+  // value is known is listed:
+  //  - custom_us_threehundred; (US Knowledgebase, Sage 300 Cloud) comes in
+  //    full from a working search URL supplied by the support team. It has not
+  //    been validated live from the build environment.
+  // Deliberately not listed: the ZA Sage 300 alias, which is only known in a
+  // truncated form (custom_za_en_threehundr…), and any Sage 300 People alias,
+  // which is unknown. Do not guess either; add them here once confirmed.
+  const KB_SEARCH_ROUTES = Object.freeze([
+    Object.freeze({
+      sourceId: 'kb-us',
+      name: 'Sage Knowledgebase (US)',
+      host: 'us-kb.sage.com',
+      product: 'Sage 300 Cloud',
+      alias: 'custom_us_threehundred;'
+    })
+  ]);
+
+  /** Verified Knowledgebase search routes for a product (empty if none). */
+  function kbSearchRoutes(product) {
+    return KB_SEARCH_ROUTES.filter((route) => route.product === product);
+  }
+
+  /** The /portal/ss/ search URL for a verified route and a keyword phrase. */
+  function buildKbSearchUrl(route, query) {
+    const querytext = encodeURIComponent(text(query)).replace(/%20/g, '+');
+    return `https://${route.host}/portal/ss/?querytext=${querytext}&tabid=2&searchaliases=${route.alias}`;
+  }
+
+  /** A Knowledgebase article link, as opposed to navigation or search pages. */
+  function isKbArticleUrl(url) {
+    return /^https:\/\/[a-z]{2}-kb\.sage\.com\/portal\/app\/portlets\/results\/viewsolution\.jsp\?(?:[^#]*&)?solutionid=\d{4,20}(?:[&#]|$)/i.test(text(url));
+  }
 
   // Branded error pages are served with a 200 status by some portals, so the
   // body is checked as well as the HTTP status.
   const ERROR_PAGE = /HTTP Status 404|status code[^<]{0,20}404|\b404\b[^<]{0,20}(?:not found|error)|not found[^<]{0,20}\b404\b|page (?:cannot be found|not found)|requested (?:resource|page|url)[^<]{0,40}(?:not (?:available|found)|unavailable)|service unavailable/i;
 
-  /** True when the body is a branded 404 / unsupported page rather than results. */
+  // Sign-in walls are served with a 200 status as well.
+  const SIGN_IN_PAGE = /<title>[^<]{0,80}\b(?:sign[\s-]?in|log[\s-]?in|login|single sign-on)\b[^<]{0,80}<\/title>|<input[^>]+type=["']?password|\b(?:please|you must)\s+(?:sign|log)\s*(?:in|on)\b/i;
+
+  /** '' for a usable page, otherwise 'empty', 'error' or 'sign-in'. */
+  function classifyPage(html) {
+    if (typeof html !== 'string' || !html.trim()) return 'empty';
+    if (ERROR_PAGE.test(html.slice(0, 4000))) return 'error';
+    if (SIGN_IN_PAGE.test(html.slice(0, 20000))) return 'sign-in';
+    return '';
+  }
+
+  /** True when the body is a branded 404, sign-in or unsupported page rather than results. */
   function looksLikeErrorPage(html) {
-    if (typeof html !== 'string' || !html.trim()) return true;
-    return ERROR_PAGE.test(html.slice(0, 4000));
+    return classifyPage(html) !== '';
   }
 
   const ALLOWED_HOSTS = SOURCES.map((source) => source.host);
@@ -90,7 +137,8 @@
     return absolute.slice(0, 500);
   }
 
-  const ARTICLE_ID = /(?:solution|article|kb)[^a-z0-9]{0,3}(\d{4,8})|[?&](?:solutionid|id)=(\d{4,8})/i;
+  // Real solution IDs are up to 15 digits; the full ID is captured, never a prefix.
+  const ARTICLE_ID = /[?&](?:solutionid|id)=(\d{4,20})(?!\d)|(?:solution|article|kb)[^a-z0-9]{0,3}(\d{4,20})(?!\d)/i;
 
   /**
    * Parse a Sage search results page into structured results.
@@ -125,9 +173,19 @@
    * Rank parsed results against the ticket evidence.
    * Nothing is invented: only the words already present in the result are used.
    */
+  function productTools() {
+    const analyzer = root.NetAdminAnalyzer;
+    return analyzer && typeof analyzer.otherProductsIn === 'function' ? analyzer : null;
+  }
+
   function rankResults(results = [], context = {}) {
     const terms = (context.terms || []).map((term) => term.toLowerCase()).filter(Boolean);
+    const tools = productTools();
+    const product = text(context.product);
+    const known = Boolean(tools) && tools.PRODUCT_LABELS.includes(product);
     return results
+      // Results naming another product are dropped even when the keywords match.
+      .filter((result) => !known || !tools.otherProductsIn(`${result.title} ${result.snippet} ${result.url}`, product).length)
       .map((result, index) => {
         const haystack = `${result.title} ${result.snippet}`.toLowerCase();
         let score = 0;
@@ -136,7 +194,11 @@
         // An article identifier only breaks ties; it never makes an unrelated
         // result relevant on its own.
         if (matchedTerms.length >= 2 && result.articleId) score += 1;
-        return Object.assign({}, result, { score, matchedTerms, index });
+        // Product-specific only when it came from a verified product-scoped
+        // search or names the product itself.
+        const productVerified = known && (result.productScoped === true
+          || tools.mentionsProduct(`${result.title} ${result.snippet} ${result.url}`, product));
+        return Object.assign({}, result, { score, matchedTerms, index, productVerified });
       })
       .filter((result) => result.matchedTerms.length >= 2)
       .sort((a, b) => b.score - a.score || a.index - b.index)
@@ -159,7 +221,9 @@
       });
       if (!response.ok) throw new Error(`the page returned HTTP ${response.status}`);
       const body = (await response.text()).slice(0, MAX_BYTES);
-      if (looksLikeErrorPage(body)) throw new Error('the page returned a not-found or unsupported response');
+      const kind = classifyPage(body);
+      if (kind === 'sign-in') throw new Error('the page asked for sign-in instead of returning results');
+      if (kind) throw new Error('the page returned a not-found or unsupported response');
       return body;
     } finally {
       if (timer) clearTimeout(timer);
@@ -177,16 +241,32 @@
       return { enabled: true, fetchedAt: Date.now(), results: [], unavailable: [] };
     }
     const timeoutMs = options.timeoutMs || TIMEOUT_MS;
+    const product = text(options.product);
+    const tools = productTools();
+    const known = Boolean(tools) && tools.PRODUCT_LABELS.includes(product);
     const results = [];
     const unavailable = [];
     for (const source of SOURCES) {
-      if (!source.search) {
-        unavailable.push({ name: source.name, reason: source.unavailableReason || 'no supported search endpoint is configured', url: source.home || '' });
+      const route = known ? kbSearchRoutes(product).find((item) => item.sourceId === source.id) : null;
+      let url = '';
+      if (route) url = buildKbSearchUrl(route, query);
+      else if (source.search) url = `${source.search}${encodeURIComponent(known ? `${product} ${query}` : query)}`;
+      if (!url) {
+        unavailable.push({
+          name: source.name,
+          reason: known
+            ? `no verified ${product} search alias is configured for this Knowledgebase; open it and search there`
+            : 'the product is not confirmed, so no product-filtered Knowledgebase search is made',
+          url: source.home || ''
+        });
         continue;
       }
       try {
-        const html = await fetchText(`${source.search}${encodeURIComponent(query)}`, timeoutMs);
-        const parsed = parseResults(html, source.id);
+        const html = await fetchText(url, timeoutMs);
+        // Knowledgebase pages only count when they link to actual articles.
+        const parsed = parseResults(html, source.id)
+          .filter((result) => !/kb\.sage\.com$/.test(source.host) || isKbArticleUrl(result.url))
+          .map((result) => Object.assign(result, { productScoped: Boolean(route) }));
         if (!parsed.length) unavailable.push({ name: source.name, reason: 'no result could be read from the page', url: source.home || '' });
         results.push(...parsed);
       } catch (error) {
@@ -205,6 +285,11 @@
   root.NetAdminSources = Object.freeze({
     SOURCES,
     ALLOWED_HOSTS,
+    KB_SEARCH_ROUTES,
+    kbSearchRoutes,
+    buildKbSearchUrl,
+    isKbArticleUrl,
+    classifyPage,
     TIMEOUT_MS,
     MAX_RESULTS,
     parseResults,

@@ -101,7 +101,7 @@ async function handleAnalyze(data, sendResponse) {
   try {
     const ticket = data || {};
     const cacheKey = ticket.incidentReference || ticket.ticketId || '';
-    const signature = JSON.stringify([ticket.question, ticket.rawLoggedText, ticket.summary, ticket.subject, ticket.description, ticket.product]);
+    const signature = analysisSignature(ticket);
 
     const cached = await getCachedAnalysis(cacheKey, signature);
     if (cached) {
@@ -122,6 +122,33 @@ async function handleAnalyze(data, sendResponse) {
     console.error('[NetAdmin Assistant] Analysis error:', error);
     sendResponse({ success: false, error: error.message });
   }
+}
+
+// Bump when the analysis rules or product scoping change, so analyses cached
+// by an older version are never reused.
+const ANALYSIS_VERSION = '0.7.0';
+
+/**
+ * Everything that can change the analysis of a ticket. The Incident Type
+ * Group and the product fields decide which product's guidance and resources
+ * are used, so switching either can never reuse a stale result.
+ */
+function analysisSignature(ticket = {}) {
+  return JSON.stringify([
+    ANALYSIS_VERSION,
+    ticket.incidentTypeGroup || '',
+    ticket.product || '',
+    ticket.module || '',
+    ticket.question || '',
+    ticket.questionSource || '',
+    ticket.rawLoggedText || '',
+    ticket.summary || '',
+    ticket.subject || '',
+    ticket.outline || '',
+    ticket.description || '',
+    ticket.customerName || '',
+    (ticket.customer && ticket.customer.contactName) || ticket.contactName || ''
+  ]);
 }
 
 /** Scoped offline support chat. */
