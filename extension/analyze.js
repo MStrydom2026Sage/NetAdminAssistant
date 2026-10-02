@@ -946,8 +946,9 @@
   //  - /portal/app/portlets/results/viewsolution.jsp opens one article and needs
   //    a real solutionid, so it is never constructed; it is only shown when a
   //    retrieved result or a curated entry links to it.
-  //  - /portal/ss/?querytext=… is the search route. It is only pre-filled when a
-  //    verified, product-specific search alias exists (NetAdminSources.KB_SEARCH_ROUTES).
+  //  - /portal/ss/?querytext=… is the search route, pre-filled for every confirmed
+  //    product (NetAdminSources.KB_SEARCH_ROUTES): filtered by a fully known
+  //    product alias, or with the product name added to the search text.
   // Google is always a manual click-through and is never read automatically.
   const GOOGLE = 'https://www.google.com/search?q=';
   const COMMUNITY = 'https://communityhub.sage.com/search?q=';
@@ -1350,7 +1351,7 @@
         rootCause: {
           content: best.id === 'generic'
             ? (withheld
-              ? `The query matches the ${withheld.label.toLowerCase()} checks for ${withheld.products.join(' / ')}, but no Incident Type Group was read from the ticket, so product-specific checks and Knowledgebase searches are withheld. Make sure the Incident Type Group is shown on the ticket page and analyse again, or confirm the product with the customer.`
+              ? `The query matches the ${withheld.label.toLowerCase()} checks for ${withheld.products.join(' / ')}, but ${productScope.source === 'unrecognised-group' ? `the Incident Type Group “${productScope.incidentTypeGroup}” is not recognised as Sage 300 Cloud or Sage 300 People` : 'no Incident Type Group was read from the ticket'}, so product-specific checks and Knowledgebase searches are withheld. Make sure the correct Incident Type Group is shown on the ticket page and analyse again, or confirm the product with the customer.`
               : `${contradiction ? `The query mentions ${productScope.conflicts.join(', ')} but the ticket is logged for ${product}; the product must be confirmed before any guidance is applied. ` : productConflict ? 'The selected product and described workflow may conflict. ' : ''}The recorded query does not provide enough evidence to identify a specific cause or module. Confirm the affected workflow before applying any module-specific guidance.`)
             : `Suggested area: ${best.label}. ${best.cause} This is a rules-based suggestion, not a confirmed root cause.`,
           confidence,

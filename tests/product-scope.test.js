@@ -305,3 +305,9 @@ test('the side panel loads the Knowledgebase routes before the analyzer', () => 
   const html = fs.readFileSync(path.join(EXTENSION_DIR, 'html', 'sidepanel.html'), 'utf8');
   assert.ok(html.indexOf('../sage-sources.js') > -1 && html.indexOf('../sage-sources.js') < html.indexOf('../analyze.js'));
 });
+
+test('an unrecognised group is named as unrecognised, not as missing', () => {
+  const result = A.analyseTicket({ incidentReference: 'WF600003', incidentTypeGroup: 'Support-Sage Evolution', question: FRENCH_QUESTION });
+  assert.match(result.analysis.rootCause.content, /“Support-Sage Evolution” is not recognised/);
+  assert.doesNotMatch(result.analysis.rootCause.content, /no Incident Type Group was read/);
+});
