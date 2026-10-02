@@ -982,10 +982,12 @@
         title: `${route.name} · ${product} search: ${phrase}`,
         url: root.NetAdminSources.buildKbSearchUrl(route, phrase),
         kind: 'search',
-        productScoped: true,
-        note: `Pre-filled Knowledgebase search limited to the ${product} search alias (${route.alias}). Open each article and confirm it applies to ${product}.`
+        productScoped: Boolean(route.alias),
+        note: route.alias
+          ? `Pre-filled Knowledgebase search limited to the ${product} search alias (${route.alias}). Open each article and confirm it applies to ${product}.`
+          : `Pre-filled Knowledgebase search with “${route.keyword || product}” added to the search text (no confirmed ${product} search alias for this Knowledgebase, so results are not filtered by product). Open each article and confirm it applies to ${product}.`
       }));
-      routes.forEach((route) => links.push({
+      routes.filter((route) => route.alias).forEach((route) => links.push({
         id: `${route.sourceId}-browse`,
         name: `${route.name} — ${product} articles`,
         title: `${route.name} · ${product} articles (no search text)`,

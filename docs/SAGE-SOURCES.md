@@ -27,25 +27,26 @@ The rules engine builds one concise phrase from the recorded question (“How wo
 |---|---|---|
 | `/portal/app/portlets/results/viewsearch.jsp?q=…` | Old search page | **Never** — it returns HTTP 404. Tests fail if it reappears. |
 | `/portal/app/portlets/results/viewsolution.jsp?solutionid=…` | One specific article; needs a real solution ID | Only for article links that were actually returned by a source. Solution IDs are never generated. |
-| `/portal/ss/?querytext=…&tabid=2&searchaliases=…` | Search, restricted by a product search alias | Only with an alias in `NetAdminSources.KB_SEARCH_ROUTES` |
+| `/portal/ss/?querytext=…&tabid=2&searchaliases=…` | Search, restricted by a product search alias | Routes in `NetAdminSources.KB_SEARCH_ROUTES` with a full alias |
+| `/portal/ss/?querytext=<product> …&tabid=2` | Search with the product name added to the search text | Routes in `KB_SEARCH_ROUTES` without a known alias |
 | `/portal/ss/?tabid=3&searchaliases=…` | Knowledgebase with only the product selected, no search text | Same aliases, offered next to the pre-filled search |
 
-`KB_SEARCH_ROUTES` contains only aliases known in full:
+Every confirmed product gets a pre-filled Knowledgebase search. `KB_SEARCH_ROUTES` uses an alias only when it is known in full; otherwise the product name is added to the search text and the link is labelled as not filtered by product:
 
 | Host | Product | Alias | Status |
 |---|---|---|---|
 | `us-kb.sage.com` | Sage 300 Cloud | `custom_us_threehundred;` | Taken from a complete working URL supplied by the user (`https://us-kb.sage.com/portal/ss/?querytext=Access+Violation&tabid=2&searchaliases=custom_us_threehundred;`). |
-| `za-kb.sage.com` | Sage 300 Cloud | `custom_za_en_threehundr…` | **Not used** — only a truncated value was available, and the suffix is not guessed. The ZA Knowledgebase home page is offered instead, labelled as not pre-filled. |
-| any | Sage 300 People | — | **Not used** — no People alias could be confirmed. People tickets get the ZA Knowledgebase home page (labelled as not pre-filled) and a Google search restricted to `za-kb.sage.com` and `"Sage 300 People"`. |
+| `za-kb.sage.com` | Sage 300 Cloud | none (`custom_za_en_threehundr…` is only known truncated and is not guessed) | Pre-filled search `https://za-kb.sage.com/portal/ss/?querytext=Sage+300+Cloud+<phrase>&tabid=2`, labelled as not product-filtered. |
+| `za-kb.sage.com` | Sage 300 People | none (no People alias could be confirmed) | Pre-filled search `https://za-kb.sage.com/portal/ss/?querytext=Sage+300+People+<phrase>&tabid=2`, labelled as not product-filtered. The US Knowledgebase and the Cloud alias are never used for People. |
 
-To add a route, append `{ sourceId, name, host, product, alias }` with the full alias once it has been confirmed from a working URL.
+To filter a search by product, set `alias` on its route to the full alias once it has been confirmed from a working URL; the `?tabid=3&searchaliases=…` product link is then offered too. To add a product, append `{ sourceId, name, host, product, alias, keyword }`.
 
 **Verification status:** the Sage Knowledgebase hosts could not be reached from the environment in which this version was built (DNS resolution was blocked), so none of the routes or aliases above were validated live by the extension's authors. The US Cloud route relies on the user-supplied working URL; confirm it in a signed-in browser before relying on it.
 
 ## What it does
 
 1. If the search phrase is empty, retrieval is skipped.
-2. The service worker requests the product's verified Knowledgebase search route (if any) and the Community Hub search for `<product> <phrase>`, using the agent's own authenticated browser session. When the product is not confirmed, no Knowledgebase route is requested.
+2. The service worker requests the product's Knowledgebase search routes and the Community Hub search for `<product> <phrase>`, using the agent's own authenticated browser session. When the product is not confirmed, no Knowledgebase route is requested.
 3. Result titles, URLs, snippets and article/solution IDs are parsed and gated on at least two terms from the actual question. Knowledgebase results are only kept when they link to a `viewsolution.jsp` article with a real solution ID.
 4. Matched results are shown in **Guidance from matched Sage sources** and in the **Sage searches** card. Only the retrieved title and extract are used — the steps inside an article are never inferred from its title.
 
@@ -55,7 +56,7 @@ Nothing is fabricated: only the text present in the retrieved page is displayed,
 
 | Source | Host | Automatic retrieval |
 |---|---|---|
-| Sage Knowledgebase (ZA) | `za-kb.sage.com` | **No** — no fully known product alias |
+| Sage Knowledgebase (ZA) | `za-kb.sage.com` | Sage 300 Cloud and Sage 300 People tickets, via `/portal/ss/` with the product name in the search text, when enabled. Results only count as product-specific when they name the product. |
 | Sage Knowledgebase (US) | `us-kb.sage.com` | Sage 300 Cloud tickets only, via `/portal/ss/` with `custom_us_threehundred;`, when enabled |
 | Sage Community Hub | `communityhub.sage.com` | Yes, when enabled |
 

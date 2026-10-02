@@ -68,11 +68,12 @@ test('the side panel separates ticket facts, rules-based checks and questions', 
   assert.doesNotMatch(html, /Collect screenshots or logs|Reproduce the issue in a safe test environment/);
 });
 
-test('knowledgebase links are shown as manual click-throughs, never as usable pre-filled searches', () => {
+test('knowledgebase searches are pre-filled, and unfiltered ones are labelled as such', () => {
   const { context, nodes } = createPanel();
   context.renderAnalysis(A.analyseTicket(TICKET), false, nodes.results);
   assert.doesNotMatch(nodes.results.innerHTML, /viewsearch\.jsp/);
-  assert.match(nodes.results.innerHTML, /cannot be pre-filled/);
+  assert.match(nodes.results.innerHTML, /za-kb\.sage\.com\/portal\/ss\/\?querytext=Sage\+300\+Cloud\+/);
+  assert.match(nodes.results.innerHTML, /results are not filtered by product/);
   assert.doesNotMatch(nodes.results.innerHTML, /Pre-filled searches \(click to open\)/);
 });
 
@@ -129,7 +130,8 @@ test('Sage searches show the issue phrase and the Incident Type Group product fi
   people.context.renderAnalysis(A.analyseTicket({ incidentReference: 'WF2', incidentTypeGroup: 'Support-Sage 300 People', rawLoggedText: question }), false, people.nodes.results);
   const peopleHtml = people.nodes.results.innerHTML;
   assert.match(peopleHtml, /Product filter: Sage 300 People/);
-  assert.doesNotMatch(peopleHtml, /custom_us_threehundred|portal\/ss\//);
+  assert.doesNotMatch(peopleHtml, /custom_us_threehundred|us-kb\.sage\.com|Sage 300 Cloud/);
+  assert.match(peopleHtml, /za-kb\.sage\.com\/portal\/ss\/\?querytext=Sage\+300\+People\+Error\+when\+user\+logs\+on/);
 
   const unknown = createPanel();
   unknown.context.renderAnalysis(A.analyseTicket({ incidentReference: 'WF3', rawLoggedText: question }), false, unknown.nodes.results);

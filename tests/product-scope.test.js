@@ -47,13 +47,16 @@ test('Incident Type Group "Support-Sage 300 People" scopes the whole analysis to
   assert.equal(result.topic.id, 'people-tax-paye');
   assert.ok(result.knowledge.length);
   assert.ok(result.knowledge.every((entry) => !cloudIds.has(entry.id)));
-  // No Sage 300 People search alias is verified: nothing is pre-filled on the
-  // Knowledgebase, and the Cloud alias and US Knowledgebase are never used.
-  assert.ok(urls(result).every((url) => !/\/portal\/ss\/|custom_us_threehundred|us-kb\.sage\.com/.test(url)));
-  const za = result.topic.links.find((link) => link.id === 'kb-za');
-  assert.equal(za.url, 'https://za-kb.sage.com/');
-  assert.equal(za.kind, 'home');
-  assert.match(za.note, /No verified Sage 300 People search alias.*cannot be pre-filled/);
+  // The ZA Knowledgebase search is pre-filled with the issue and the People
+  // product name (no People alias is known, so it is not presented as
+  // filtered); the Cloud alias and the US Knowledgebase are never used.
+  assert.ok(urls(result).every((url) => !/custom_us_threehundred|us-kb\.sage\.com|searchaliases/.test(url)));
+  const za = result.topic.links.find((link) => link.id === 'kb-za-search');
+  assert.equal(za.url, `https://za-kb.sage.com/portal/ss/?querytext=Sage+300+People+${encodeURIComponent(result.query).replace(/%20/g, '+')}&tabid=2`);
+  assert.equal(za.kind, 'search');
+  assert.equal(za.productScoped, false);
+  assert.match(za.note, /“Sage 300 People” added to the search text.*not filtered by product/);
+  assert.ok(result.topic.links.every((link) => link.url !== 'https://za-kb.sage.com/'));
   for (const url of decoded(result).filter((value) => /google|communityhub/.test(value))) assert.match(url, /Sage 300 People/);
   for (const url of decoded(result)) assert.doesNotMatch(url, /Sage 300 Cloud|"Sage 300" -/);
 });
@@ -173,10 +176,16 @@ test('no link uses the retired endpoint or a constructed article URL, for any pr
       assert.ok(['za-kb.sage.com', 'us-kb.sage.com', 'communityhub.sage.com', 'www.google.com'].includes(host), host);
     }
   }
-  assert.deepEqual(JSON.parse(JSON.stringify(S.KB_SEARCH_ROUTES)), [{
-    sourceId: 'kb-us', name: 'Sage Knowledgebase (US)', host: 'us-kb.sage.com', product: 'Sage 300 Cloud', alias: 'custom_us_threehundred;'
-  }]);
-  assert.equal(S.kbSearchRoutes('Sage 300 People').length, 0);
+  // Only fully known aliases; the truncated ZA alias and any People alias are never guessed.
+  assert.deepEqual(Array.from(S.KB_SEARCH_ROUTES, (route) => [route.host, route.product, route.alias]), [
+    ['us-kb.sage.com', 'Sage 300 Cloud', 'custom_us_threehundred;'],
+    ['za-kb.sage.com', 'Sage 300 Cloud', ''],
+    ['za-kb.sage.com', 'Sage 300 People', '']
+  ]);
+  assert.equal(S.kbSearchRoutes('Sage product not specified').length, 0);
+  const peopleRoute = S.kbSearchRoutes('Sage 300 People')[0];
+  assert.equal(S.buildKbSearchUrl(peopleRoute, 'leave balance incorrect'), 'https://za-kb.sage.com/portal/ss/?querytext=Sage+300+People+leave+balance+incorrect&tabid=2');
+  assert.equal(S.buildKbBrowseUrl(peopleRoute), '');
   assert.equal(S.buildKbSearchUrl(S.KB_SEARCH_ROUTES[0], 'Access Violation'),
     'https://us-kb.sage.com/portal/ss/?querytext=Access+Violation&tabid=2&searchaliases=custom_us_threehundred;');
 });
@@ -224,6 +233,7 @@ test('retrieval uses only verified product routes and rejects 404, sign-in and n
   try {
     const cloud = await S.fetchSageSources({ query: 'Database error', terms: A.normalizeTerms('Database error logging'), product: 'Sage 300 Cloud' });
     assert.deepEqual(calls, [
+      'https://za-kb.sage.com/portal/ss/?querytext=Sage+300+Cloud+Database+error&tabid=2',
       'https://us-kb.sage.com/portal/ss/?querytext=Database+error&tabid=2&searchaliases=custom_us_threehundred;',
       'https://communityhub.sage.com/search?q=Sage%20300%20Cloud%20Database%20error'
     ]);
@@ -231,14 +241,19 @@ test('retrieval uses only verified product routes and rejects 404, sign-in and n
     assert.equal(cloud.results[0].articleId, '260422192647140');
     assert.equal(cloud.results[0].productVerified, true);
     const reasons = Object.fromEntries(cloud.unavailable.map((item) => [item.name, item.reason]));
-    assert.match(reasons['Sage Knowledgebase (ZA)'], /no verified Sage 300 Cloud search alias/);
+    assert.match(reasons['Sage Knowledgebase (ZA)'], /not-found/);
     assert.match(reasons['Sage Community Hub'], /sign-in/);
 
     calls.length = 0;
     const people = await S.fetchSageSources({ query: 'Database error', terms: ['database', 'error'], product: 'Sage 300 People' });
-    assert.deepEqual(calls, ['https://communityhub.sage.com/search?q=Sage%20300%20People%20Database%20error']);
+    assert.deepEqual(calls, [
+      'https://za-kb.sage.com/portal/ss/?querytext=Sage+300+People+Database+error&tabid=2',
+      'https://communityhub.sage.com/search?q=Sage%20300%20People%20Database%20error'
+    ]);
     assert.equal(people.results.length, 0);
-    assert.ok(people.unavailable.filter((item) => /Knowledgebase/.test(item.name)).every((item) => /no verified Sage 300 People search alias/.test(item.reason)));
+    const peopleReasons = Object.fromEntries(people.unavailable.map((item) => [item.name, item.reason]));
+    assert.match(peopleReasons['Sage Knowledgebase (US)'], /no verified Sage 300 People search alias/);
+    assert.match(peopleReasons['Sage Knowledgebase (ZA)'], /not-found/);
   } finally {
     context.fetch = originalFetch;
   }

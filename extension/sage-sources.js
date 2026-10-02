@@ -22,10 +22,9 @@
   //  - /portal/app/portlets/results/viewsolution.jsp?solutionid=… is a single
   //    article. It needs a real solution ID, so it is only ever taken from a
   //    retrieved page, never constructed.
-  //  - /portal/ss/?querytext=…&tabid=2&searchaliases=… is the search route. It
-  //    is only used with a product-specific search alias whose full value is
-  //    known (KB_SEARCH_ROUTES). Without one, the Knowledgebase has no generic
-  //    `search` URL and is reported as unavailable instead of being fetched.
+  //  - /portal/ss/?querytext=…&tabid=2[&searchaliases=…] is the search route,
+  //    used only through the product routes in KB_SEARCH_ROUTES. Without a
+  //    confirmed product there is no Knowledgebase search.
   const SOURCES = [
     {
       id: 'kb-za',
@@ -46,33 +45,60 @@
     { id: 'community', name: 'Sage Community Hub', host: 'communityhub.sage.com', home: 'https://communityhub.sage.com/', search: 'https://communityhub.sage.com/search?q=' }
   ];
 
-  // Product-scoped Knowledgebase search aliases. Only an alias whose complete
-  // value is known is listed:
-  //  - custom_us_threehundred; (US Knowledgebase, Sage 300 Cloud) comes in
-  //    full from a working search URL supplied by the support team. It has not
-  //    been validated live from the build environment.
-  // Deliberately not listed: the ZA Sage 300 alias, which is only known in a
-  // truncated form (custom_za_en_threehundr…), and any Sage 300 People alias,
-  // which is unknown. Do not guess either; add them here once confirmed.
+  // Product Knowledgebase search routes. Every product gets a pre-filled
+  // /portal/ss/ search:
+  //  - alias routes restrict the search with a product search alias whose
+  //    complete value is known. custom_us_threehundred; (US Knowledgebase,
+  //    Sage 300 Cloud) comes in full from a working search URL supplied by the
+  //    support team.
+  //  - keyword routes are used where no full alias is known (the ZA Sage 300
+  //    alias is only known truncated, custom_za_en_threehundr…, and no Sage 300
+  //    People alias is known). The product name is added to the search text
+  //    instead, so the search is pre-filled but not product-filtered by the
+  //    Knowledgebase; each article still has to be checked. Never guess an
+  //    alias: when one is confirmed, set `alias` and the route becomes filtered.
+  // None of these routes could be validated live from the build environment.
   const KB_SEARCH_ROUTES = Object.freeze([
     Object.freeze({
       sourceId: 'kb-us',
       name: 'Sage Knowledgebase (US)',
       host: 'us-kb.sage.com',
       product: 'Sage 300 Cloud',
-      alias: 'custom_us_threehundred;'
+      alias: 'custom_us_threehundred;',
+      keyword: ''
+    }),
+    Object.freeze({
+      sourceId: 'kb-za',
+      name: 'Sage Knowledgebase (ZA)',
+      host: 'za-kb.sage.com',
+      product: 'Sage 300 Cloud',
+      alias: '',
+      keyword: 'Sage 300 Cloud'
+    }),
+    Object.freeze({
+      sourceId: 'kb-za',
+      name: 'Sage Knowledgebase (ZA)',
+      host: 'za-kb.sage.com',
+      product: 'Sage 300 People',
+      alias: '',
+      keyword: 'Sage 300 People'
     })
   ]);
 
-  /** Verified Knowledgebase search routes for a product (empty if none). */
+  /** Knowledgebase search routes for a product (empty if none). */
   function kbSearchRoutes(product) {
     return KB_SEARCH_ROUTES.filter((route) => route.product === product);
   }
 
-  /** The /portal/ss/ search URL for a verified route and a keyword phrase. */
+  /**
+   * The /portal/ss/ search URL for a route and a keyword phrase: filtered by
+   * the product alias when one is known, otherwise with the product name
+   * added to the search text.
+   */
   function buildKbSearchUrl(route, query) {
-    const querytext = encodeURIComponent(text(query)).replace(/%20/g, '+');
-    return `https://${route.host}/portal/ss/?querytext=${querytext}&tabid=2&searchaliases=${route.alias}`;
+    const searchText = route.alias ? text(query) : `${route.keyword || route.product} ${text(query)}`.trim();
+    const querytext = encodeURIComponent(searchText).replace(/%20/g, '+');
+    return `https://${route.host}/portal/ss/?querytext=${querytext}&tabid=2${route.alias ? `&searchaliases=${route.alias}` : ''}`;
   }
 
   /**
@@ -80,6 +106,7 @@
    * https://us-kb.sage.com/portal/ss/?tabid=3&searchaliases=custom_us_threehundred
    */
   function buildKbBrowseUrl(route) {
+    if (!route.alias) return '';
     return `https://${route.host}/portal/ss/?tabid=3&searchaliases=${route.alias.replace(/;$/, '')}`;
   }
 
@@ -274,7 +301,7 @@
         // Knowledgebase pages only count when they link to actual articles.
         const parsed = parseResults(html, source.id)
           .filter((result) => !/kb\.sage\.com$/.test(source.host) || isKbArticleUrl(result.url))
-          .map((result) => Object.assign(result, { productScoped: Boolean(route) }));
+          .map((result) => Object.assign(result, { productScoped: Boolean(route && route.alias) }));
         if (!parsed.length) unavailable.push({ name: source.name, reason: 'no result could be read from the page', url: source.home || '' });
         results.push(...parsed);
       } catch (error) {
