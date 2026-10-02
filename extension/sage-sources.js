@@ -75,6 +75,14 @@
     return `https://${route.host}/portal/ss/?querytext=${querytext}&tabid=2&searchaliases=${route.alias}`;
   }
 
+  /**
+   * The product-filtered Knowledgebase landing page (no search text), as in
+   * https://us-kb.sage.com/portal/ss/?tabid=3&searchaliases=custom_us_threehundred
+   */
+  function buildKbBrowseUrl(route) {
+    return `https://${route.host}/portal/ss/?tabid=3&searchaliases=${route.alias.replace(/;$/, '')}`;
+  }
+
   /** A Knowledgebase article link, as opposed to navigation or search pages. */
   function isKbArticleUrl(url) {
     return /^https:\/\/[a-z]{2}-kb\.sage\.com\/portal\/app\/portlets\/results\/viewsolution\.jsp\?(?:[^#]*&)?solutionid=\d{4,20}(?:[&#]|$)/i.test(text(url));
@@ -287,6 +295,7 @@
     ALLOWED_HOSTS,
     KB_SEARCH_ROUTES,
     kbSearchRoutes,
+    buildKbBrowseUrl,
     buildKbSearchUrl,
     isKbArticleUrl,
     classifyPage,

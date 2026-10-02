@@ -1,4 +1,4 @@
-# NetAdmin Assistant v0.7.0
+# NetAdmin Assistant v0.7.1
 
 **Offline Sage 300 support ticket analyser for NetAdmin**
 
@@ -47,8 +47,9 @@ When no rule matches, no steps are invented. The panel and the draft reply inste
 Live retrieval is **off by default** and is enabled from the **Local data** section of the side panel.
 
 - The **Incident Type Group** on the ticket (for example `Support-Sage 300 Cloud`) decides the product. Only that product's rules, knowledge entries, search links and live results are used; a different product mentioned in the ticket text is flagged as a contradiction, and a missing or unrecognised group means no product-specific guidance is given.
-- The search phrase is built from the recorded question only (privacy-sanitised, product prefix removed) and pre-fills the Sage Knowledgebase search, Community Hub and Google links.
-- The retired `viewsearch.jsp` endpoint (HTTP 404) is no longer used. Sage 300 Cloud tickets get a pre-filled `us-kb.sage.com/portal/ss/?querytext=…&searchaliases=custom_us_threehundred;` search. The ZA Cloud alias and any People alias are not known in full, so those Knowledgebases are offered as clearly labelled, non-pre-filled entry points. `viewsolution.jsp` article links are only shown when a real solution ID was retrieved.
+- The search phrase is built from the recorded question only (privacy-sanitised, product prefix removed) and pre-fills the Sage Knowledgebase search, Community Hub and Google links. Long descriptions are reduced to their issue keywords (for example “language French installed printing posting errors report”).
+- If the panel says no Incident Type Group was read, product-specific checks and the pre-filled Knowledgebase search are withheld; it names the checks that would apply. Make sure the Incident Type Group is visible on the ticket and analyse again.
+- The retired `viewsearch.jsp` endpoint (HTTP 404) is no longer used. Sage 300 Cloud tickets get a pre-filled `us-kb.sage.com/portal/ss/?querytext=…&tabid=2&searchaliases=custom_us_threehundred;` search and a link to the Knowledgebase with only Sage 300 Cloud selected (`?tabid=3&searchaliases=custom_us_threehundred`). The ZA Cloud alias and any People alias are not known in full, so those Knowledgebases are offered as clearly labelled, non-pre-filled entry points. `viewsolution.jsp` article links are only shown when a real solution ID was retrieved.
 - When enabled, `communityhub.sage.com` is requested for every ticket with a search phrase, and `us-kb.sage.com/portal/ss/` only for Sage 300 Cloud tickets (the only fully known alias). `za-kb.sage.com` is never requested automatically; it stays on the allowlist so its article links remain renderable. Sign-in walls, non-article pages and results for another product are not treated as evidence.
 - HTTP errors and branded 404 / unsupported pages are detected, so a broken source is reported as unavailable instead of being parsed.
 - The agent's existing authenticated browser session is used; no credentials are stored.

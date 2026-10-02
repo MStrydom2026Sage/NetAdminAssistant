@@ -60,5 +60,5 @@ test('switching the Incident Type Group never reuses a cached analysis', async (
   const base = context.analysisSignature(ticket);
   assert.notEqual(context.analysisSignature(Object.assign({}, ticket, { product: 'Sage 300 People' })), base);
   assert.notEqual(context.analysisSignature(Object.assign({}, ticket, { module: 'Payroll' })), base);
-  assert.match(base, /"0\.7\.0"/);
+  assert.match(base, /"0\.7\.1"/);
 });

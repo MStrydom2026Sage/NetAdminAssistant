@@ -53,12 +53,15 @@
     for (const [key, label] of FIELD_LABELS) {
       if (fields[key]) continue;
       const pattern = new RegExp(
-        `(?:^|\\n)\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:[:\\-]\\s*|\\n\\s*${key === 'question' && !label.endsWith('?') ? '|\\?\\s+' : ''})([\\s\\S]*?)(?=\\n\\s*(?:${LABEL_BOUNDARY})\\s*(?:[:\\-]|\\n)|$)`,
+        `(?:^|\\n)\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \\t]*(?:[:\\-]\\s*|\\t\\s*|\\n\\s*${key === 'question' && !label.endsWith('?') ? '|\\?\\s+' : ''})([\\s\\S]*?)(?=\\n\\s*(?:${LABEL_BOUNDARY})\\s*(?:[:\\-]|\\n)|$)`,
         'i'
       );
       const match = source.match(pattern);
       if (match) {
-        const value = match[1].replace(/\s+/g, ' ').trim();
+        // The Incident Type Group is a single value; never let it run on into
+        // the next table cell or line.
+        const raw = key === 'incidentTypeGroup' ? match[1].trim().split(/[\t\n]/)[0] : match[1];
+        const value = raw.replace(/\s+/g, ' ').trim();
         if (value) fields[key] = value;
       }
     }
@@ -143,6 +146,47 @@
     return codes;
   }
 
+  // A question this long is a description, not a search: it is reduced to
+  // its issue keywords, as an agent would type them into the Knowledgebase.
+  const MAX_NATURAL_WORDS = 8;
+  const MAX_SUMMARY_WORDS = 7;
+  const FILLER_WORDS = new Set([
+    'to', 'of', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'or', 'and', 'but', 'when', 'whenever', 'if', 'then',
+    'so', 'because', 'while', 'which', 'where', 'who', 'what', 'how', 'why', 'all', 'any', 'some', 'only', 'same',
+    'other', 'into', 'than', 'as', 'not', 'no', 'can', 'cannot', 'doesn', 'don', 'isn', 'aren', 'wasn', 'won',
+    'didn', 'couldn', 'linked', 'using', 'used', 'use', 'user', 'users', 'standard', 'normal', 'normally', 'works',
+    'working', 'worked', 'them', 'him', 'her', 'his', 'us', 'me', 'him', 'one', 'two', 'now', 'again', 'yet', 'get', 'got',
+    'go', 'goes', 'went', 'make', 'makes', 'made', 'see', 'seen', 'shows', 'showing', 'show', 'happens', 'happen'
+  ]);
+
+  /** Crude stem so "print", "prints" and "printing" count as one keyword. */
+  function keywordStem(word) {
+    return word.toLowerCase().replace(/(?:ing|ed|es|s)$/, '');
+  }
+
+  /**
+   * Issue keywords of a long description: the first sentence that carries
+   * the issue, without filler words or repeats, then codes.
+   */
+  function summariseKeywords(source, exclude, codes) {
+    const sentences = text(source).split(/(?<=[.!?;])\s+|\n+/).filter((item) => item.trim());
+    const picked = [];
+    const stems = new Set();
+    for (const sentence of sentences) {
+      for (const word of phraseWords(sentence, exclude, codes)) {
+        if (word.length < 2 && !codes.includes(word)) continue;
+        if (FILLER_WORDS.has(word.toLowerCase())) continue;
+        const stem = keywordStem(word);
+        if (stems.has(stem)) continue;
+        stems.add(stem);
+        picked.push(word);
+        if (picked.length >= MAX_SUMMARY_WORDS) return picked;
+      }
+      if (picked.length >= 3) break;
+    }
+    return picked;
+  }
+
   function trimEdges(words) {
     const out = words.slice();
     while (out.length && EDGE_WORDS.has(out[0].toLowerCase())) out.shift();
@@ -181,7 +225,8 @@
       add(codes, true);
       return words.join(' ').trim();
     }
-    const keywords = trimEdges(phraseWords(source, exclude, codes));
+    let keywords = trimEdges(phraseWords(source, exclude, codes));
+    if (keywords.length > MAX_NATURAL_WORDS) keywords = summariseKeywords(source, exclude, codes);
     // Natural order when everything fits; otherwise the codes go first so
     // they are never cut off.
     if (keywords.join(' ').length > MAX_QUERY_LENGTH) add(codes, true);
@@ -260,7 +305,10 @@
    */
   function resolveProduct(ticket = {}, fieldsIn) {
     const fields = fieldsIn || extractFields(ticket.rawLoggedText || ticket.description);
-    const group = stripSiteCodes(text(ticket.incidentTypeGroup) || text(fields.incidentTypeGroup)).slice(0, 120);
+    // Prefer whichever reading of the group names a product: the page control
+    // can expose an id while the logged text shows the readable group.
+    const groups = [ticket.incidentTypeGroup, fields.incidentTypeGroup].map((value) => stripSiteCodes(text(value)).slice(0, 120)).filter(Boolean);
+    const group = groups.find((value) => classifyProduct(value)) || groups[0] || '';
     const productField = stripSiteCodes(text(ticket.product) || text(fields.product)).slice(0, 120);
     let product = PRODUCT_UNKNOWN;
     let source = 'none';
@@ -575,6 +623,24 @@
         'Confirm which report or layout is used and whether a customised version is involved.',
         'Check the connector or report designer configuration and the database credentials it uses.',
         'Run the standard Sage layout for the same selection to confirm whether the customisation is the cause.'
+      ]
+    },
+    {
+      id: 'report-language',
+      label: 'Report printing depends on the user language',
+      products: [CLOUD],
+      mode: 'guide',
+      patterns: [
+        { re: /(?:french|fran[cç]ais|spanish|espa[nñ]ol|chinese|language)[\s\S]{0,200}(?:print\w*|report\w*)|(?:print\w*|report\w*)[\s\S]{0,200}(?:french|fran[cç]ais|spanish|espa[nñ]ol|chinese|language)/i, weight: 10 },
+        { re: /user|linked|english|posting|journal|error report|standard report/i, weight: 3 }
+      ],
+      cause: 'When a report prints for users set to one language but not another, the report files used for the other language (each language has its own copy of the standard reports) or that user’s language setup differ, rather than the accounting data.',
+      steps: [
+        'Confirm the exact report(s) that fail, the module they are printed from and the batch, and print the same batch as an English-linked user for comparison.',
+        'Check the language set for the affected users in Administrative Services > Users, and test with one user switched to English and back.',
+        'Compare the report files in the module’s French language folder of the Sage 300 programs directory (for example the FRA folder next to ENG) with the English ones, and confirm the French reports exist and are at the same product update (PU) level.',
+        'Check whether a Custom Report Profile or customised report location applies to the French users, and print the standard Sage layout to Preview to see whether a message is shown.',
+        'If the French report files are missing or older, reapply the product update with the French language component in a test environment first, and note the result on the ticket.'
       ]
     },
     {
@@ -919,6 +985,15 @@
         productScoped: true,
         note: `Pre-filled Knowledgebase search limited to the ${product} search alias (${route.alias}). Open each article and confirm it applies to ${product}.`
       }));
+      routes.forEach((route) => links.push({
+        id: `${route.sourceId}-browse`,
+        name: `${route.name} — ${product} articles`,
+        title: `${route.name} · ${product} articles (no search text)`,
+        url: root.NetAdminSources.buildKbBrowseUrl(route),
+        kind: 'home',
+        productScoped: true,
+        note: `The Knowledgebase with only ${product} selected, to refine the search by hand.`
+      }));
       const prefilled = routes.map((route) => route.sourceId);
       [['kb-za', 'Sage Knowledgebase (ZA)', 'https://za-kb.sage.com/'], ['kb-us', 'Sage Knowledgebase (US)', 'https://us-kb.sage.com/']]
         .filter(([id]) => !prefilled.includes(id) && (id === 'kb-za' || product === CLOUD))
@@ -1168,6 +1243,20 @@
         bestScore = score;
       }
     });
+    // Without a product, product-specific rules are withheld; say which one
+    // would apply so the agent knows the Incident Type Group is the blocker.
+    let withheld = null;
+    if (best.id === 'generic' && product === PRODUCT_UNKNOWN && !contradiction) {
+      let withheldScore = 0;
+      RULES.forEach((rule) => {
+        const candidates = rule.products.map((item) => scoreRule(rule, intent, item, moduleInfo.id));
+        const score = Math.max(0, ...candidates);
+        if (score > withheldScore) {
+          withheld = rule;
+          withheldScore = score;
+        }
+      });
+    }
     if (best.id === 'generic') moduleInfo = { id: 'unknown', label: 'Module not identified' };
     else if (best.module && best.module !== 'unknown' && best.module !== 'si') {
       moduleInfo = MODULES.find((module) => module.id === best.module) || moduleInfo;
@@ -1258,7 +1347,9 @@
       analysis: {
         rootCause: {
           content: best.id === 'generic'
-            ? `${contradiction ? `The query mentions ${productScope.conflicts.join(', ')} but the ticket is logged for ${product}; the product must be confirmed before any guidance is applied. ` : productConflict ? 'The selected product and described workflow may conflict. ' : ''}The recorded query does not provide enough evidence to identify a specific cause or module. Confirm the affected workflow before applying any module-specific guidance.`
+            ? (withheld
+              ? `The query matches the ${withheld.label.toLowerCase()} checks for ${withheld.products.join(' / ')}, but no Incident Type Group was read from the ticket, so product-specific checks and Knowledgebase searches are withheld. Make sure the Incident Type Group is shown on the ticket page and analyse again, or confirm the product with the customer.`
+              : `${contradiction ? `The query mentions ${productScope.conflicts.join(', ')} but the ticket is logged for ${product}; the product must be confirmed before any guidance is applied. ` : productConflict ? 'The selected product and described workflow may conflict. ' : ''}The recorded query does not provide enough evidence to identify a specific cause or module. Confirm the affected workflow before applying any module-specific guidance.`)
             : `Suggested area: ${best.label}. ${best.cause} This is a rules-based suggestion, not a confirmed root cause.`,
           confidence,
           evidence

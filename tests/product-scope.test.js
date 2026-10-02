@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadExtension, loadKnowledgeFile } = require('./load-analyzer');
+const fs = require('node:fs');
+const path = require('node:path');
+const { loadExtension, loadKnowledgeFile, EXTENSION_DIR } = require('./load-analyzer');
 
 const { analyzer: A, knowledge: K, sources: S, context } = loadExtension();
 const ENTRIES = K.normalizeKnowledge(loadKnowledgeFile());
@@ -244,4 +246,47 @@ test('retrieval uses only verified product routes and rejects 404, sign-in and n
   assert.equal(S.classifyPage('<html><body>HTTP Status 404 – Not Found</body></html>'), 'error');
   assert.equal(S.isKbArticleUrl('https://za-kb.sage.com/portal/app/portlets/results/viewsolution.jsp?solutionid=241118113535307&page=1'), true);
   assert.equal(S.isKbArticleUrl('https://za-kb.sage.com/portal/ss/?querytext=x'), false);
+});
+
+const FRENCH_QUESTION = "Have language French installed but when printing posting errors report it doesn't print the posting errors if the user is linked to the language french. if the user is linked to the language English then it prints. these are standard reports. Tried AR Invoices, Receipts, AP Invoices, Payments GL - all posting journal error reports are all printing";
+
+test('French-language report ticket: Cloud group pre-fills the Cloud Knowledgebase search with a concise issue summary', () => {
+  // Group and question as they appear in the page text of a NetAdmin ticket.
+  const result = A.analyseTicket({
+    incidentReference: 'WF600001',
+    rawLoggedText: `Incident type group\tSupport-Sage 300 Cloud\nHow would you best describe this query?: ${FRENCH_QUESTION}`
+  });
+  assert.equal(result.product, 'Sage 300 Cloud');
+  assert.equal(result.productScope.source, 'incident-type-group');
+  assert.equal(result.topic.id, 'report-language');
+  assert.equal(result.query, 'language French installed printing posting errors report');
+  assert.ok(result.query.split(' ').length <= 7);
+  const urls = Array.from(result.topic.links, (link) => link.url);
+  assert.equal(urls[0], 'https://us-kb.sage.com/portal/ss/?querytext=language+French+installed+printing+posting+errors+report&tabid=2&searchaliases=custom_us_threehundred;');
+  assert.ok(urls.includes('https://us-kb.sage.com/portal/ss/?tabid=3&searchaliases=custom_us_threehundred'));
+  assert.ok(!urls.includes('https://us-kb.sage.com/'));
+  assert.match(result.analysis.solution.steps.join('\n'), /FRA folder|French reports/);
+});
+
+test('a readable group in the page text wins over an id read from a hidden control', () => {
+  const scope = A.resolveProduct({ incidentTypeGroup: '12', rawLoggedText: 'Incident Type Group\nSupport-Sage 300 People\nPriority\nHigh' });
+  assert.equal(scope.product, 'Sage 300 People');
+  assert.equal(scope.incidentTypeGroup, 'Support-Sage 300 People');
+});
+
+test('without an Incident Type Group the panel says which product checks are withheld and offers no Cloud search', () => {
+  const result = A.analyseTicket({ incidentReference: 'WF600002', question: FRENCH_QUESTION });
+  assert.equal(result.topic.id, 'generic');
+  assert.match(result.analysis.rootCause.content, /no Incident Type Group was read/);
+  assert.ok(result.topic.links.every((link) => !/searchaliases=/.test(link.url)));
+});
+
+test('long descriptions are reduced to issue keywords; short ones keep their wording', () => {
+  assert.equal(A.buildSearchPhrase(FRENCH_QUESTION), 'language French installed printing posting errors report');
+  assert.equal(A.buildSearchPhrase('Error when user logs on'), 'Error when user logs on');
+});
+
+test('the side panel loads the Knowledgebase routes before the analyzer', () => {
+  const html = fs.readFileSync(path.join(EXTENSION_DIR, 'html', 'sidepanel.html'), 'utf8');
+  assert.ok(html.indexOf('../sage-sources.js') > -1 && html.indexOf('../sage-sources.js') < html.indexOf('../analyze.js'));
 });

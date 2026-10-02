@@ -4,7 +4,7 @@ The extension can rank live results from the official Sage sources. This is an *
 
 ## Product scope: the Incident Type Group
 
-The NetAdmin **Incident Type Group** (for example `Support-Sage 300 Cloud`) is read from the ticket page and is the authoritative product for the analysis:
+The NetAdmin **Incident Type Group** (for example `Support-Sage 300 Cloud`) is read from the ticket page — from a label and value, a bound select, a dropdown widget's visible text (a hidden input that only holds the group's id is ignored), a table row, or the page text — and is the authoritative product for the analysis:
 
 | Incident Type Group | Product used | Resources offered |
 |---|---|---|
@@ -19,7 +19,7 @@ The NetAdmin **Incident Type Group** (for example `Support-Sage 300 Cloud`) is r
 
 ## The search phrase
 
-The rules engine builds one concise phrase from the recorded question (“How would you best describe this query?” / *Confirmed from this ticket*): greetings, ticket references, site codes, email addresses, phone numbers, the customer's name and the product prefix are removed. A quoted or labelled error message is preferred, and error codes are kept only when they appear next to the words *error* / *code* (or as `0x…` codes) in the question — incidental numbers are dropped. The product constraint is applied separately by the link or route, never by adding the product to the phrase.
+The rules engine builds one concise phrase from the recorded question (“How would you best describe this query?” / *Confirmed from this ticket*): greetings, ticket references, site codes, email addresses, phone numbers, the customer's name and the product prefix are removed. Descriptions longer than eight keywords are reduced to the issue keywords of their first sentence (filler words and repeats removed, at most seven words). A quoted or labelled error message is preferred, and error codes are kept only when they appear next to the words *error* / *code* (or as `0x…` codes) in the question — incidental numbers are dropped. The product constraint is applied separately by the link or route, never by adding the product to the phrase.
 
 ## Knowledgebase routes
 
@@ -28,6 +28,7 @@ The rules engine builds one concise phrase from the recorded question (“How wo
 | `/portal/app/portlets/results/viewsearch.jsp?q=…` | Old search page | **Never** — it returns HTTP 404. Tests fail if it reappears. |
 | `/portal/app/portlets/results/viewsolution.jsp?solutionid=…` | One specific article; needs a real solution ID | Only for article links that were actually returned by a source. Solution IDs are never generated. |
 | `/portal/ss/?querytext=…&tabid=2&searchaliases=…` | Search, restricted by a product search alias | Only with an alias in `NetAdminSources.KB_SEARCH_ROUTES` |
+| `/portal/ss/?tabid=3&searchaliases=…` | Knowledgebase with only the product selected, no search text | Same aliases, offered next to the pre-filled search |
 
 `KB_SEARCH_ROUTES` contains only aliases known in full:
 

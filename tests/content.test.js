@@ -92,3 +92,13 @@ test('the scraped Incident Type Group is passed to the analyzer as an explicit f
   assert.match(source, /incidentTypeGroup: ''/);
   assert.match(source, /ticketData\.incidentTypeGroup = readIncidentTypeGroup\(\);/);
 });
+
+test('a dropdown widget shows the group while its hidden input only holds an id', () => {
+  const widget = { textContent: 'Support-Sage 300 Cloud', innerText: 'Support-Sage 300 Cloud' };
+  const cell = { querySelector: (selector) => (selector.includes('.k-input') ? widget : null), textContent: 'Support-Sage 300 Cloud' };
+  const hidden = { tagName: 'INPUT', value: '12', parentElement: cell };
+  const label = node('Incident type group', { getAttribute: (name) => (name === 'for' ? 'IncidentTypeGroupId' : null) });
+  assert.equal(readGroup([label], [], { IncidentTypeGroupId: hidden }), 'Support-Sage 300 Cloud');
+  // an id on its own is never reported as the group
+  assert.equal(readGroup([node('Incident type group', { nextElementSibling: { tagName: 'INPUT', value: '12' } })]), '');
+});

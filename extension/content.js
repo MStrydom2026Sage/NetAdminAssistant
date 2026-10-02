@@ -183,44 +183,104 @@ function controlText(control) {
 // Stops an inline "label: value" read from running into the next field.
 const NEXT_FIELD = /\s+(?:product|module|incident\s*type|priority|status|stage|category|sub[- ]?category|assigned\s*to|logged\s*by|site\s*code|customer)\s*[:\-]/i;
 
+// A product group value as NetAdmin shows it, e.g. "Support-Sage 300 Cloud".
+const GROUP_VALUE = /\bsage\s*300\s*(?:cloud|people)\b/i;
+// Visible text of common dropdown widgets that hide the real <select>/<input>.
+const WIDGET_TEXT = '.k-input-value-text, .k-input, .k-dropdown-wrap .k-input, .select2-selection__rendered, .chosen-single span, [role="combobox"], .dropdown-toggle, .selected-text';
+
 function cleanGroupValue(value) {
   const cleaned = String(value || '').replace(/\s+/g, ' ').trim().split(NEXT_FIELD)[0].trim();
   if (!cleaned || cleaned.length > 120 || GROUP_LABEL.test(cleaned) || GROUP_PLACEHOLDER.test(cleaned)) return '';
+  // Hidden inputs often hold the group's numeric/GUID id, which is not the group.
+  if (/^[\d\s-]+$/.test(cleaned) || /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(cleaned)) return '';
   return cleaned;
+}
+
+/** Values a label's neighbour can show: widget text, select option, then plain text. */
+function candidateValues(candidate) {
+  if (!candidate) return [];
+  const values = [];
+  if (isFormControl(candidate)) {
+    values.push(controlText(candidate));
+    return values;
+  }
+  const widget = candidate.querySelector?.(WIDGET_TEXT);
+  if (widget) values.push(widget.innerText || widget.textContent || widget.value || '');
+  const select = candidate.querySelector?.('select');
+  if (select) values.push(controlText(select));
+  const control = candidate.querySelector?.('input:not([type="hidden"]), textarea, input');
+  if (control) values.push(controlText(control));
+  // Plain text is only safe when it is not the full option list of a <select>.
+  if (!select) values.push(candidate.innerText || candidate.textContent || '');
+  return values;
+}
+
+function isVisible(element) {
+  if (!element) return false;
+  if (typeof element.getClientRects === 'function') return element.getClientRects().length > 0;
+  return true;
 }
 
 /**
  * Read the NetAdmin "Incident Type Group" (for example
  * "Support-Sage 300 Cloud"). It is rendered as a label next to a value, a
- * label bound to a select/input, a single "label: value" element or a named
- * control, so each variation is tried in turn.
+ * label bound to a select/input or dropdown widget, a single "label: value"
+ * element or a named control, so each variation is tried. A value naming a
+ * Sage 300 product is preferred over anything else that was found (such as
+ * a hidden id), so a widget's hidden input can never hide the visible group.
  */
 function readIncidentTypeGroup() {
+  const found = [];
+  const consider = (value) => {
+    const cleaned = cleanGroupValue(value);
+    if (cleaned && !found.includes(cleaned)) found.push(cleaned);
+  };
   const elements = document.querySelectorAll('label, th, dt, dd, td, span, strong, b, div, p');
   for (const element of elements) {
     const own = (element.textContent || '').replace(/\s+/g, ' ').trim();
     if (own.length < 200) {
       const inline = GROUP_INLINE.exec(own);
-      if (inline && cleanGroupValue(inline[1])) return cleanGroupValue(inline[1]);
+      if (inline) consider(inline[1]);
     }
     if (!GROUP_LABEL.test(own)) continue;
     const forId = element.getAttribute?.('for');
     const target = forId ? document.getElementById(forId) : null;
-    const candidates = [target, element.nextElementSibling, element.parentElement?.nextElementSibling];
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      const control = isFormControl(candidate) ? candidate : candidate.querySelector?.('select, input, textarea');
-      const value = cleanGroupValue(control ? controlText(control) : (candidate.innerText || candidate.textContent || ''));
-      if (value) return value;
+    const row = element.parentElement;
+    const candidates = [
+      target,
+      target?.parentElement,
+      element.nextElementSibling,
+      row?.nextElementSibling,
+      row?.parentElement?.nextElementSibling
+    ];
+    for (const candidate of candidates) candidateValues(candidate).forEach(consider);
+    // Label and value in one row with no separator: "Incident type group Support-Sage 300 Cloud".
+    if (row && !row.querySelector?.('select')) {
+      const rowText = (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim();
+      const rest = rowText.replace(/^.*?incident\s*type\s*group\s*[:*]?\s*[:\-]?\s*/i, '');
+      if (rest !== rowText && rest.length < 120) consider(rest);
     }
   }
   for (const control of document.querySelectorAll('select[name], select[id], select[aria-label], input[name], input[id], input[aria-label]')) {
     const name = `${control.getAttribute('aria-label') || ''} ${control.getAttribute('name') || ''} ${control.getAttribute('id') || ''}`;
-    if (!/incident.?type.?group/i.test(name)) continue;
-    const value = cleanGroupValue(controlText(control));
-    if (value) return value;
+    if (!/incident.?type.?group|type.?group/i.test(name)) continue;
+    consider(controlText(control));
+    candidateValues(control.parentElement).forEach(consider);
   }
-  return '';
+  const product = found.find((value) => GROUP_VALUE.test(value));
+  if (product) return product;
+  // Last resort: a visible, stand-alone "Support-Sage 300 Cloud" style value
+  // (or the selected option of any select) somewhere on the ticket.
+  for (const select of document.querySelectorAll('select')) {
+    const value = cleanGroupValue(controlText(select));
+    if (/^support\s*[-\u2013:]\s*sage\s*300\s*(?:cloud|people)\b/i.test(value)) return value;
+  }
+  for (const element of document.querySelectorAll('td, dd, span, div, p, a, strong, b, input')) {
+    if (/^option$/i.test(element.tagName || '') || !isVisible(element)) continue;
+    const value = cleanGroupValue(element.tagName && /^input$/i.test(element.tagName) ? element.value : element.textContent);
+    if (/^support\s*[-\u2013:]\s*sage\s*300\s*(?:cloud|people)$/i.test(value)) return value;
+  }
+  return found[0] || '';
 }
 
 /**
