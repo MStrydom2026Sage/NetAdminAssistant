@@ -52,7 +52,7 @@
 
   /** The recorded query answer only: everything from the next section on is dropped. */
   function isolateQuestion(value) {
-    let out = text(value).replace(/^\s*how would you best describe this query\s*\??\s*[:*]?\s*/i, '');
+    let out = text(value).replace(/^\s*h?ow would you best describe this query\s*\??\s*[:*]?\s*/i, '');
     const anywhere = SECTION_ANYWHERE.exec(out);
     if (anywhere) out = out.slice(0, anywhere.index);
     const line = SECTION_LINE.exec(`${out}\n`);
@@ -170,13 +170,15 @@
   // its issue keywords, as an agent would type them into the Knowledgebase.
   const MAX_NATURAL_WORDS = 8;
   const MAX_SUMMARY_WORDS = 7;
+  const SUBJECT_WORDS = 3;
   const FILLER_WORDS = new Set([
     'to', 'of', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'or', 'and', 'but', 'when', 'whenever', 'if', 'then',
     'so', 'because', 'while', 'which', 'where', 'who', 'what', 'how', 'why', 'all', 'any', 'some', 'only', 'same',
     'other', 'into', 'than', 'as', 'not', 'no', 'can', 'cannot', 'doesn', 'don', 'isn', 'aren', 'wasn', 'won',
     'didn', 'couldn', 'linked', 'using', 'used', 'use', 'user', 'users', 'standard', 'normal', 'normally', 'works',
     'working', 'worked', 'them', 'him', 'her', 'his', 'us', 'me', 'one', 'two', 'now', 'again', 'yet', 'get', 'got',
-    'go', 'goes', 'went', 'make', 'makes', 'made', 'see', 'seen', 'shows', 'showing', 'show', 'happens', 'happen'
+    'go', 'goes', 'went', 'make', 'makes', 'made', 'see', 'seen', 'shows', 'showing', 'show', 'happens', 'happen',
+    'number', 'status', 'following', 'areas', 'area'
   ]);
 
   /** Crude stem so "print", "prints" and "printing" count as one keyword. */
@@ -190,7 +192,8 @@
   const SYMPTOM_SIGNALS = [
     /\b(?:error|errors|fail\w*|cannot|can'?t|unable|does\s*n(?:o|')t|doesn'?t|won'?t|will not|not\s+\w+ing)\b/i,
     /\bslow\w*|\btakes?\s+(?:about\s+|up to\s+|over\s+)?\d|\bhang\w*|\bfreez\w*|not responding|time[sd]?\s?out|\bcrash\w*|\bstuck\b/i,
-    /\b(?:print\w*|post\w*|open\w*|load\w*|log\w*\s+(?:on|in)|login|import\w*|export\w*|calculat\w*|email\w*|missing|incorrect|wrong|blank|out of balance)\b/i
+    /\b(?:print\w*|post\w*|open\w*|load\w*|log\w*\s+(?:on|in)|login|import\w*|export\w*|calculat\w*|email\w*|missing|incorrect|wrong|blank|out of balance)\b/i,
+    /\b(?:unable to|can(?:not|'?t)|could\s*n(?:o|')t)\s+(?:find|see|locate)\b|\bnot (?:showing|shown|appearing|found)\b|\bmissing\b/i
   ];
   const NOISE_SIGNALS = [
     /\b(?:ticket|reference|case)\s+(?:number|no\.?|ref)\b|\bprevious(?:ly)?\s+(?:ticket|logged)|\bexperienced issues\b|\bresolved\b|\bwas fixed\b/i,
@@ -199,7 +202,9 @@
     /\bno (?:problems?|issues?)\b|\bworks? (?:fine|correctly|perfectly)\b|\bimmediately\b|\bseems? to be\b/i
   ];
   const DURATION = /\btakes?\s+(?:about\s+|up to\s+|over\s+|between\s+)?\d+(?:\s*(?:-|to|and)\s*\d+)?\s*(?:min\w*|sec\w*|hours?|hrs?)\b/gi;
-  const LEADING_CONTEXT = /^\s*(?:since|after|before|following|as|although|because|ever since)\b[^,]{3,80},\s*/i;
+  const LEADING_CONTEXT = /^\s*(?:(?:since|after|before|following|as|although|because|ever since)\b[^,]{3,80},|however,?|additionally,?|also,?)\s*/i;
+  const NOT_FOUND = /\b(?:we\s+are\s+|we're\s+|they\s+are\s+)?(?:unable to|can(?:not|'?t)|could\s*n(?:o|')t)\s+(?:find|see|locate)\b/gi;
+  const LIST_INTRO = /\b(?:in|on|from)\s+the\s+following\s+(?:areas?|places?|reports?|screens?|modules?)\s*:?/gi;
 
   function sentenceScore(value) {
     const sentence = value.replace(LEADING_CONTEXT, '');
@@ -211,7 +216,7 @@
 
   /** The sentence of a description that best states the symptom. */
   function issueSentence(value) {
-    const sentences = text(value).split(/(?<=[.!?;])\s+|\n+/).filter((item) => item.trim());
+    const sentences = issueSentences(value);
     if (sentences.length < 2) return text(value);
     let best = sentences[0];
     let bestScore = sentenceScore(best);
@@ -231,25 +236,58 @@
    * symptom (the earliest one on a tie), without leading background clauses,
    * filler words or repeats, then codes.
    */
+  function issueSentences(source) {
+    const sentences = [];
+    let listOpen = false;
+    for (const line of text(source).split(/(?<=[.!?;])\s+|\n+/).map((item) => item.trim()).filter(Boolean)) {
+      // A short list after "...in the following areas:" belongs to that sentence.
+      if (listOpen && line.split(/\s+/).length <= 5 && !/[.!?;:]$/.test(line)) {
+        sentences[sentences.length - 1] += `, ${line}`;
+        continue;
+      }
+      sentences.push(line);
+      listOpen = line.endsWith(':');
+    }
+    return sentences.map((sentence) => sentence.replace(/:,\s*/g, ': '));
+  }
+
   function summariseKeywords(source, exclude, codes) {
-    const sentences = text(source).split(/(?<=[.!?;])\s+|\n+/).filter((item) => item.trim());
+    const sentences = issueSentences(source);
     const ranked = sentences
       .map((sentence, index) => ({ sentence, index, score: sentenceScore(sentence) }))
       .sort((a, b) => b.score - a.score || a.index - b.index);
     const picked = [];
     const stems = new Set();
+    const take = (word) => {
+      if (word.length < 2 && !codes.some((code) => code.toLowerCase() === word.toLowerCase())) return false;
+      if (FILLER_WORDS.has(word.toLowerCase())) return false;
+      const stem = keywordStem(word);
+      if (stems.has(stem)) return false;
+      stems.add(stem);
+      picked.push(word);
+      return true;
+    };
+    let limit = MAX_SUMMARY_WORDS;
+    // "We are unable to find this batch" names its subject in the sentence
+    // before: a few of that sentence's keywords come first.
+    const best = ranked[0];
+    if (best && best.index > 0 && /\b(?:this|that|these|those|it)\b/i.test(best.sentence.replace(LEADING_CONTEXT, ''))) {
+      let added = 0;
+      for (const word of phraseWords(sentences[best.index - 1], exclude, codes)) {
+        if (take(word)) added += 1;
+        if (added >= SUBJECT_WORDS) break;
+      }
+      limit += 1;
+    }
     for (const { sentence } of ranked) {
-      let issue = sentence.replace(DURATION, ' slow ');
+      let issue = sentence.replace(DURATION, ' slow ').replace(NOT_FOUND, ' missing ').replace(LIST_INTRO, ' ');
       const trimmed = issue.replace(LEADING_CONTEXT, '');
       if (trimmed !== issue && phraseWords(trimmed, exclude, codes).length >= 3) issue = trimmed;
       for (const word of phraseWords(issue, exclude, codes)) {
-        if (word.length < 2 && !codes.some((code) => code.toLowerCase() === word.toLowerCase())) continue;
-        if (FILLER_WORDS.has(word.toLowerCase())) continue;
-        const stem = keywordStem(word);
-        if (stems.has(stem)) continue;
-        stems.add(stem);
-        picked.push(word);
-        if (picked.length >= MAX_SUMMARY_WORDS) return picked;
+        for (const part of /^\p{L}{3,}\/\p{L}{3,}$/u.test(word) ? word.split('/') : [word]) {
+          take(part);
+          if (picked.length >= limit) return picked;
+        }
       }
       if (picked.length >= 3) break;
     }
@@ -290,7 +328,7 @@
     const messageWords = message ? trimEdges(phraseWords(message[1], exclude)) : [];
     const codes = extractIssueCodes(source).filter((code) => !exclude.some((word) => word.toLowerCase() === code.toLowerCase()));
     if (messageWords.length >= 2) {
-      add(messageWords);
+      add(trimEdges(messageWords.slice(0, MAX_SUMMARY_WORDS)));
       add(codes, true);
       return words.join(' ').trim();
     }
@@ -439,7 +477,7 @@
     { name: 'Pacific Technology', match: /pacific technology|norming/i },
     { name: 'Technisoft', match: /technisoft|service manager/i },
     { name: 'AutoSimply', match: /autosimply|manufacturing/i },
-    { name: 'Third-party add-on', match: /third[- ]party|add[- ]?on|isv\b|plug[- ]?in/i }
+    { name: 'Third-party add-on', match: /(?:third|3rd)[- ]party(?!\s+log(?:in|on|-in|-on)\b)|add[- ]?on|isv\b|plug[- ]?in/i }
   ];
 
   /** Identify named third-party products and compatibility questions. */
@@ -491,7 +529,7 @@
       products: [PEOPLE],
       module: 'people',
       mode: 'guide',
-      patterns: [{ re: /\bess\b|employee self service|self[- ]service/i, weight: 5 }, { re: /mobile|app|qr code|registration|register/i, weight: 4 }],
+      patterns: [{ re: /\bess\b|employee self service|self[- ]service/i, weight: 5 }, { re: /\b(?:mobile|app|qr code|registration|register)\b/i, weight: 4 }],
       cause: 'Employee self-service mobile registration fails when the employee record, self-service access or registration code is not valid for the device being used.',
       steps: [
         'Confirm the employee is active and has an ESS user with the correct self-service role.',
@@ -771,6 +809,43 @@
       ]
     },
     {
+      id: 'people-ess-third-party-logon',
+      label: 'ESS single sign-on / Third Party Logon string',
+      products: [PEOPLE],
+      module: 'people',
+      mode: 'guide',
+      patterns: [
+        { re: /single sign[- ]?on|\bsso\b|(?:third|3rd)[- ]party log(?:in|on|-in|-on)/i, weight: 8 },
+        { re: /\bess\b|self[- ]service|take[- ]?on|import|batch|bulk|e-?mail|alphanumeric/i, weight: 3 }
+      ],
+      cause: 'The ESS user Third Party Logon string is validated in a fixed format; the message “must contain at least 1 alphanumeric before the \\ and at least 1 after” means the value is expected as text\\text (for example DOMAIN\\username), so a plain e-mail address is rejected by that validation.',
+      steps: [
+        'Record the exact take-on error, the Sage 300 People version and update level, and the value tested for the two employees.',
+        'Confirm with whoever configured SSO which logon format the single sign-on setup actually sends for these users (DOMAIN\\username or the e-mail address), and test that format by capturing it manually on one ESS user and signing in.',
+        'If the manually captured e-mail address signs in but the ESS User Take-On batch rejects the same value, the batch applies a stricter validation than the screen: log it with Sage with the error, a sample take-on file and the version, and ask for the supported way to load the logon string in bulk.',
+        'Do not update the ESS user tables directly in the database for the approximately 2250 users unless Sage provides a supported script; test any bulk method on a copy of the database first.'
+      ]
+    },
+    {
+      id: 'gl-posted-batch-missing',
+      label: 'Posted G/L batch missing from reports and inquiry',
+      products: [CLOUD],
+      module: 'gl',
+      mode: 'guide',
+      patterns: [
+        { re: /\bposted\b[\s\S]{0,400}(?:unable to (?:find|see|locate)|can(?:not|'?t) (?:find|see|locate)|not (?:showing|shown|appearing|found|reflect\w*|in the)|missing)|(?:unable to (?:find|see|locate)|can(?:not|'?t) (?:find|see|locate)|missing|not (?:showing|appearing))[\s\S]{0,300}(?:trial balance|transaction listing|history inquiry)/i, weight: 8 },
+        { re: /trial balance|transaction listing|transaction history|history inquiry|journal entry|\bgl\b|\bg\/l\b|general ledger/i, weight: 3 }
+      ],
+      cause: 'A batch that shows as Posted but does not appear in the Trial Balance, Transaction Listing or Transaction History Inquiry was usually posted to a different fiscal year or period (including the adjustment or closing period), contained no entries or zero amounts, or is outside the accounts, source codes or period range the reports and inquiry were run for.',
+      steps: [
+        'Open the batch in G/L Batch List and note the posting sequence, the number of entries, the batch total and the fiscal year and period of each entry.',
+        'Reprint the G/L Posting Journal for that posting sequence to confirm which accounts, fiscal year and period the entries were posted to.',
+        'Rerun the Trial Balance, Transaction Listing and Transaction History Inquiry for exactly that fiscal year and period (including the adjustment period if used), the accounts on the posting journal and all source codes.',
+        'Confirm the status is Posted and not Provisionally Posted, and that the user running the reports has access to those accounts (run them as ADMIN to compare).',
+        'If the posting journal shows the entries but the reports still do not, send the posting journal, the batch and the report selection criteria to Sage before changing data.'
+      ]
+    },
+    {
       id: 'performance-slow',
       label: 'Slow screen or performance',
       products: BOTH,
@@ -930,7 +1005,8 @@
     if (!fields.stepsToReplicate) {
       questions.push(`Ask for the screen, menu path and steps followed when “${quote}”.`);
     }
-    if (!fields.resolutionsAttempted && !attempted.length) {
+    const reportsAttempts = /\b(?:we|they|client|customer|i)\s+(?:have\s+|had\s+)?(?:also\s+|already\s+)?(?:tested|tried|ran|run|checked|restarted|reinstalled|re-?ran)\b/i.test(recorded);
+    if (!fields.resolutionsAttempted && !attempted.length && !reportsAttempts) {
       questions.push('Ask what has already been tried for this query and what the result of each attempt was.');
     }
     questions.push(`Ask whether “${quote}” affects one user, one workstation or everyone, and when it last worked.`);

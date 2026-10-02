@@ -361,3 +361,49 @@ test('the search phrase comes from the symptom sentence, not ticket background o
   // A vague "freezes" stays unclassified; only stated slowness selects the rule.
   assert.equal(A.analyseTicket({ incidentReference: 'WF600011', incidentTypeGroup: 'Support-Sage 300 Cloud', question: 'The screen freezes after the weekend.' }).topic.id, 'generic');
 });
+
+test('ESS single sign-on Third Party Logon ticket gets People-specific checks and the error as search', () => {
+  const question = `ow would you best describe this query?: Good day
+
+Client want to start using Single Sign On, SSO is setup on People and testes working 100%. The 3rd Party Login String must now be completed for all ESS users.
+
+The 3rd party login string will be the users email address but the system don't allow to update the field via the ESS User Take-On batch. We tested on 2 employees and we got the following error: The Third Party Logon string must contain at leatst 1 alphanumeric before the \\ and at least 1 after.
+
+You can manually update the field for employees but the client has approx 2250 ESS users that needs to be updated.`;
+  const result = A.analyseTicket({ incidentReference: 'WF600020', incidentTypeGroup: 'Support-Sage 300 People', question });
+  assert.equal(result.topic.id, 'people-ess-third-party-logon');
+  assert.equal(result.query, 'Third Party Logon string must contain');
+  assert.deepEqual(Array.from(result.thirdParty.products), []);
+  assert.doesNotMatch(result.analysis.solution.steps.join(' '), /QR code|third-party|vendor/i);
+  assert.doesNotMatch(result.analysis.solution.questions.join(' '), /already been tried/);
+  assert.doesNotMatch(result.summary, /describe this query/i);
+  // The same text on a Cloud ticket never gets the People rule.
+  assert.notEqual(A.analyseTicket({ incidentReference: 'WF600021', incidentTypeGroup: 'Support-Sage 300 Cloud', question }).topic.id, 'people-ess-third-party-logon');
+});
+
+test('posted G/L batch missing from the Trial Balance gets G/L checks and a subject-plus-symptom search', () => {
+  const question = `How would you best describe this query?: Dear Support Team,
+
+Our customer posted a GL Journal Entry with batch number 025617, and the batch status is showing as Posted.
+
+However, we are unable to find this batch/transaction in the following areas:
+
+Trial Balance
+Transaction Listing
+Transaction History Inquiry
+
+We have also run the Data Integrity Check, but it did not report any errors related to this batch.
+
+Additionally, we checked the batch for any error log, but no error log is available.
+Note : attached here the GL_journal_entry batch as well data integrity report for your reference.
+
+Could you please advise what additional checks we should perform to identify the cause and how we can resolve this issue?`;
+  const result = A.analyseTicket({ incidentReference: 'WF600022', incidentTypeGroup: 'Support-Sage 300 Cloud', question });
+  assert.equal(result.topic.id, 'gl-posted-batch-missing');
+  assert.equal(result.module.id, 'gl');
+  assert.equal(result.query, 'posted GL Journal missing batch transaction Trial Balance');
+  assert.doesNotMatch(result.query, /025617|number|status/);
+  assert.match(result.analysis.solution.steps.join(' '), /Posting Journal/);
+  assert.doesNotMatch(result.analysis.solution.questions.join(' '), /already been tried/);
+  assert.notEqual(A.analyseTicket({ incidentReference: 'WF600023', incidentTypeGroup: 'Support-Sage 300 People', question }).topic.id, 'gl-posted-batch-missing');
+});

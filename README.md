@@ -1,4 +1,4 @@
-# NetAdmin Assistant v0.7.4
+# NetAdmin Assistant v0.7.5
 
 **Offline Sage 300 support ticket analyser for NetAdmin**
 
