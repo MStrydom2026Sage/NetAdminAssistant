@@ -264,7 +264,7 @@ test('French-language report ticket: Cloud group pre-fills the Cloud Knowledgeba
   const urls = Array.from(result.topic.links, (link) => link.url);
   assert.equal(urls[0], 'https://us-kb.sage.com/portal/ss/?querytext=language+French+installed+printing+posting+errors+report&tabid=2&searchaliases=custom_us_threehundred;');
   assert.ok(urls.includes('https://us-kb.sage.com/portal/ss/?tabid=3&searchaliases=custom_us_threehundred'));
-  assert.ok(!urls.includes('https://us-kb.sage.com/'));
+  assert.ok(urls.every((url) => url !== 'https://us-kb.sage.com/'));
   assert.match(result.analysis.solution.steps.join('\n'), /FRA folder|French reports/);
 });
 

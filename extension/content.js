@@ -208,8 +208,10 @@ function candidateValues(candidate) {
   if (widget) values.push(widget.innerText || widget.textContent || widget.value || '');
   const select = candidate.querySelector?.('select');
   if (select) values.push(controlText(select));
-  const control = candidate.querySelector?.('input:not([type="hidden"]), textarea, input');
+  const control = candidate.querySelector?.('input:not([type="hidden"]), textarea');
   if (control) values.push(controlText(control));
+  const hidden = candidate.querySelector?.('input[type="hidden"]');
+  if (hidden) values.push(controlText(hidden));
   // Plain text is only safe when it is not the full option list of a <select>.
   if (!select) values.push(candidate.innerText || candidate.textContent || '');
   return values;
@@ -241,6 +243,7 @@ function readIncidentTypeGroup() {
     if (own.length < 200) {
       const inline = GROUP_INLINE.exec(own);
       if (inline) consider(inline[1]);
+      if (inline && GROUP_VALUE.test(inline[1])) break;
     }
     if (!GROUP_LABEL.test(own)) continue;
     const forId = element.getAttribute?.('for');
@@ -254,6 +257,7 @@ function readIncidentTypeGroup() {
       row?.parentElement?.nextElementSibling
     ];
     for (const candidate of candidates) candidateValues(candidate).forEach(consider);
+    if (found.some((value) => GROUP_VALUE.test(value))) break;
     // Label and value in one row with no separator: "Incident type group Support-Sage 300 Cloud".
     if (row && !row.querySelector?.('select')) {
       const rowText = (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim();
@@ -276,8 +280,10 @@ function readIncidentTypeGroup() {
     if (/^support\s*[-\u2013:]\s*sage\s*300\s*(?:cloud|people)\b/i.test(value)) return value;
   }
   for (const element of document.querySelectorAll('td, dd, span, div, p, a, strong, b, input')) {
-    if (/^option$/i.test(element.tagName || '') || !isVisible(element)) continue;
-    const value = cleanGroupValue(element.tagName && /^input$/i.test(element.tagName) ? element.value : element.textContent);
+    if (/^option$/i.test(element.tagName || '') || (element.childElementCount || 0) > 2) continue;
+    const raw = (element.tagName && /^input$/i.test(element.tagName) ? element.value : element.textContent) || '';
+    if (raw.length > 80 || !GROUP_VALUE.test(raw) || !isVisible(element)) continue;
+    const value = cleanGroupValue(raw);
     if (/^support\s*[-\u2013:]\s*sage\s*300\s*(?:cloud|people)$/i.test(value)) return value;
   }
   return found[0] || '';

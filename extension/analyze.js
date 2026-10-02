@@ -155,7 +155,7 @@
     'so', 'because', 'while', 'which', 'where', 'who', 'what', 'how', 'why', 'all', 'any', 'some', 'only', 'same',
     'other', 'into', 'than', 'as', 'not', 'no', 'can', 'cannot', 'doesn', 'don', 'isn', 'aren', 'wasn', 'won',
     'didn', 'couldn', 'linked', 'using', 'used', 'use', 'user', 'users', 'standard', 'normal', 'normally', 'works',
-    'working', 'worked', 'them', 'him', 'her', 'his', 'us', 'me', 'him', 'one', 'two', 'now', 'again', 'yet', 'get', 'got',
+    'working', 'worked', 'them', 'him', 'her', 'his', 'us', 'me', 'one', 'two', 'now', 'again', 'yet', 'get', 'got',
     'go', 'goes', 'went', 'make', 'makes', 'made', 'see', 'seen', 'shows', 'showing', 'show', 'happens', 'happen'
   ]);
 
@@ -174,7 +174,7 @@
     const stems = new Set();
     for (const sentence of sentences) {
       for (const word of phraseWords(sentence, exclude, codes)) {
-        if (word.length < 2 && !codes.includes(word)) continue;
+        if (word.length < 2 && !codes.some((code) => code.toLowerCase() === word.toLowerCase())) continue;
         if (FILLER_WORDS.has(word.toLowerCase())) continue;
         const stem = keywordStem(word);
         if (stems.has(stem)) continue;
