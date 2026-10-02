@@ -184,16 +184,65 @@
     return word.toLowerCase().replace(/(?:ing|ed|es|s)$/, '');
   }
 
+  // Sentences that state the symptom are preferred; background (earlier
+  // tickets, updates already resolved), impact and requests to investigate
+  // describe the ticket, not the issue to search for.
+  const SYMPTOM_SIGNALS = [
+    /\b(?:error|errors|fail\w*|cannot|can'?t|unable|does\s*n(?:o|')t|doesn'?t|won'?t|will not|not\s+\w+ing)\b/i,
+    /\bslow\w*|\btakes?\s+(?:about\s+|up to\s+|over\s+)?\d|\bhang\w*|\bfreez\w*|not responding|time[sd]?\s?out|\bcrash\w*|\bstuck\b/i,
+    /\b(?:print\w*|post\w*|open\w*|load\w*|log\w*\s+(?:on|in)|login|import\w*|export\w*|calculat\w*|email\w*|missing|incorrect|wrong|blank|out of balance)\b/i
+  ];
+  const NOISE_SIGNALS = [
+    /\b(?:ticket|reference|case)\s+(?:number|no\.?|ref)\b|\bprevious(?:ly)?\s+(?:ticket|logged)|\bexperienced issues\b|\bresolved\b|\bwas fixed\b/i,
+    /\bfrustrat\w*|\bcausing (?:more )?delays\b|\bunhappy\b|\bescalat\w*|\burgent\w*/i,
+    /^\s*(?:can|could|would)\s+you\b|\bplease\s+(?:investigate|check|look|advise|assist|help)\b|\binvestigate why\b/i,
+    /\bno (?:problems?|issues?)\b|\bworks? (?:fine|correctly|perfectly)\b|\bimmediately\b|\bseems? to be\b/i
+  ];
+  const DURATION = /\btakes?\s+(?:about\s+|up to\s+|over\s+|between\s+)?\d+(?:\s*(?:-|to|and)\s*\d+)?\s*(?:min\w*|sec\w*|hours?|hrs?)\b/gi;
+  const LEADING_CONTEXT = /^\s*(?:since|after|before|following|as|although|because|ever since)\b[^,]{3,80},\s*/i;
+
+  function sentenceScore(value) {
+    const sentence = value.replace(LEADING_CONTEXT, '');
+    let score = 0;
+    for (const signal of SYMPTOM_SIGNALS) if (signal.test(sentence)) score += 2;
+    for (const signal of NOISE_SIGNALS) if (signal.test(sentence)) score -= 3;
+    return score;
+  }
+
+  /** The sentence of a description that best states the symptom. */
+  function issueSentence(value) {
+    const sentences = text(value).split(/(?<=[.!?;])\s+|\n+/).filter((item) => item.trim());
+    if (sentences.length < 2) return text(value);
+    let best = sentences[0];
+    let bestScore = sentenceScore(best);
+    for (const sentence of sentences.slice(1)) {
+      const score = sentenceScore(sentence);
+      if (score > bestScore) {
+        best = sentence;
+        bestScore = score;
+      }
+    }
+    const trimmed = best.replace(LEADING_CONTEXT, '');
+    return (trimmed.split(/\s+/).length >= 3 ? trimmed : best).replace(/[.;!?]+\s*$/, '');
+  }
+
   /**
-   * Issue keywords of a long description: the first sentence that carries
-   * the issue, without filler words or repeats, then codes.
+   * Issue keywords of a long description: the sentence that best states the
+   * symptom (the earliest one on a tie), without leading background clauses,
+   * filler words or repeats, then codes.
    */
   function summariseKeywords(source, exclude, codes) {
     const sentences = text(source).split(/(?<=[.!?;])\s+|\n+/).filter((item) => item.trim());
+    const ranked = sentences
+      .map((sentence, index) => ({ sentence, index, score: sentenceScore(sentence) }))
+      .sort((a, b) => b.score - a.score || a.index - b.index);
     const picked = [];
     const stems = new Set();
-    for (const sentence of sentences) {
-      for (const word of phraseWords(sentence, exclude, codes)) {
+    for (const { sentence } of ranked) {
+      let issue = sentence.replace(DURATION, ' slow ');
+      const trimmed = issue.replace(LEADING_CONTEXT, '');
+      if (trimmed !== issue && phraseWords(trimmed, exclude, codes).length >= 3) issue = trimmed;
+      for (const word of phraseWords(issue, exclude, codes)) {
         if (word.length < 2 && !codes.some((code) => code.toLowerCase() === word.toLowerCase())) continue;
         if (FILLER_WORDS.has(word.toLowerCase())) continue;
         const stem = keywordStem(word);
@@ -722,6 +771,24 @@
       ]
     },
     {
+      id: 'performance-slow',
+      label: 'Slow screen or performance',
+      products: BOTH,
+      mode: 'guide',
+      patterns: [
+        { re: /\bslow\w*|\btakes?\s+(?:about\s+|up to\s+|over\s+|between\s+)?\d+(?:\s*(?:-|to|and)\s*\d+)?\s*(?:min\w*|sec\w*|hours?|hrs?)\b|\bperformance\b/i, weight: 8 },
+        { re: /screen|open\w*|load\w*|environment\w*|server|network|database|\bdb\b|backup|local|online|hosted|all (?:users|accounts)|update/i, weight: 3 }
+      ],
+      cause: 'When a screen is slow only in one environment, and a copy of the same database opens it quickly elsewhere, the delay comes from that environment (database server, hosting, network, or what changed with the update) rather than from the data itself.',
+      steps: [
+        'Record the exact screen, how long it takes to open, and whether every user and every company on that database is affected.',
+        'Compare the same screen against a local restore of the same backup, as already done when the ticket mentions it, and note the update level on both sides.',
+        'Check what changed with the recent update in the slow environment: the program update level on the server and workstations, and any update or patch applied to the database.',
+        'Check the database server in that environment while the screen opens (CPU, memory, disk and blocking sessions), and whether database maintenance (index and statistics) has run since the update.',
+        'If only the hosted or online environment is slow, escalate to the hosting or infrastructure team with the timings and the local comparison, and note the result on the ticket.'
+      ]
+    },
+    {
       id: 'generic',
       label: 'General troubleshooting',
       products: BOTH,
@@ -844,7 +911,7 @@
   function buildQuestions(context) {
     const { fields, question, product, errorCodes, attempted, productScope } = context;
     const recorded = question || fields.summary || context.summaryText;
-    const quote = shortQuote(recorded);
+    const quote = shortQuote(issueSentence(recorded));
     const questions = [];
     if (!quote) {
       questions.push('The ticket records no answer to “How would you best describe this query?”. Ask the customer what they were doing, what happened and what they expected to happen.');

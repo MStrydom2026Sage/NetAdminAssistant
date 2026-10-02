@@ -347,3 +347,17 @@ test('a product named in the query itself is still flagged as a contradiction', 
   const result = A.analyseTicket({ incidentReference: 'WF600005', incidentTypeGroup: 'Support-Sage 300 Cloud', question: 'Sage 300 People payslips do not print', subject: 'x' });
   assert.deepEqual(Array.from(result.productScope.conflicts), ['Sage 300 People']);
 });
+
+test('the search phrase comes from the symptom sentence, not ticket background or impact', () => {
+  const question = 'This customer experienced issues with the new update on Monday - ticket number WF1048951. Since Sage resolved the update issue, the TOT screen takes 7 - 10min to open. This is causing more delays and frustration for the customer. Can you please investigate why this is happening. This seems to be environmental as we also downloaded the backup and have no problems with TOT screen on a local environment, it opens immediately. This happens on all the @online accounts that use the DB.';
+  for (const group of ['Support-Sage 300 People', 'Support-Sage 300 Cloud']) {
+    const result = A.analyseTicket({ incidentReference: 'WF600010', incidentTypeGroup: group, question: `How would you best describe this query?: ${question}` });
+    assert.equal(result.query, 'TOT screen slow open');
+    assert.equal(result.topic.id, 'performance-slow');
+    assert.deepEqual(Array.from(result.productScope.conflicts), []);
+    assert.doesNotMatch(result.analysis.solution.questions.join(' '), /new update on Monday|ticket number/);
+    assert.match(result.analysis.solution.questions.join(' '), /TOT screen takes 7 - 10min to open/);
+  }
+  // A vague "freezes" stays unclassified; only stated slowness selects the rule.
+  assert.equal(A.analyseTicket({ incidentReference: 'WF600011', incidentTypeGroup: 'Support-Sage 300 Cloud', question: 'The screen freezes after the weekend.' }).topic.id, 'generic');
+});
