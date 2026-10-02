@@ -19,7 +19,7 @@ The NetAdmin **Incident Type Group** (for example `Support-Sage 300 Cloud`) is r
 
 ## The search phrase
 
-The rules engine builds one concise phrase from the recorded question (“How would you best describe this query?” / *Confirmed from this ticket*): greetings, ticket references, site codes, email addresses, phone numbers, the customer's name and the product prefix are removed. Descriptions longer than eight keywords are reduced to the issue keywords of their first sentence (filler words and repeats removed, at most seven words). A quoted or labelled error message is preferred, and error codes are kept only when they appear next to the words *error* / *code* (or as `0x…` codes) in the question — incidental numbers are dropped. The product constraint is applied separately by the link or route, never by adding the product to the phrase.
+The rules engine builds one concise phrase from the recorded question only (the Outline answer to “How would you best describe this query?”, cut at the next section and never including the Ticket Survey): greetings, ticket references, site codes, email addresses, phone numbers, the customer's name and the product prefix are removed. Descriptions longer than eight keywords are reduced to the issue keywords of their first sentence (filler words and repeats removed, at most seven words). A quoted or labelled error message is preferred, and error codes are kept only when they appear next to the words *error* / *code* (or as `0x…` codes) in the question — incidental numbers are dropped. The product constraint is applied separately by the link or route, never by adding the product to the phrase.
 
 ## Knowledgebase routes
 

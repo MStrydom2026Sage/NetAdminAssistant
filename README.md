@@ -1,4 +1,4 @@
-# NetAdmin Assistant v0.7.2
+# NetAdmin Assistant v0.7.3
 
 **Offline Sage 300 support ticket analyser for NetAdmin**
 
@@ -35,6 +35,8 @@ Sage 300 Cloud: BOM/assemblies, Tax Services, bank reconciliation, G/L control a
 ### How the next steps are built
 
 The **Suggested next steps** card keeps three kinds of information apart, so a hypothesis is never presented as a verified instruction:
+
+Only the answer to **“How would you best describe this query?”** in the ticket's Outline section is analysed. The answer stops at the next webform question or page section; the **Ticket Survey** (and any label inside it) is ignored, and product contradictions are judged on the query answer alone, so survey text, the subject or page chrome naming another product cannot block the suggestions.
 
 1. **Confirmed from this ticket** — facts quoted from the webform (recorded query, product, version, error message, steps to replicate, work already done).
 2. **Rules-based checks** — steps from the local rule that actually matched, each labelled with the rule it came from. They are explicitly not verified against a Sage article.

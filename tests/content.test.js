@@ -102,3 +102,20 @@ test('a dropdown widget shows the group while its hidden input only holds an id'
   // an id on its own is never reported as the group
   assert.equal(readGroup([node('Incident type group', { nextElementSibling: { tagName: 'INPUT', value: '12' } })]), '');
 });
+
+test('the query answer stops at the Ticket Survey and the next webform question', () => {
+  const answer = 'Posting errors report does not print for French users.';
+  const cell = { innerText: `${answer}\nTicket Survey\nHow satisfied were you with Sage 300 People support?` };
+  const label = { textContent: 'How would you best describe this query?', getAttribute() { return null; }, nextElementSibling: cell };
+  assert.equal(readMarkup([label]), answer);
+  const next = { innerText: `${answer}\nDescribe the resolutions attempted: reinstalled` };
+  assert.equal(readMarkup([{ textContent: 'How would you best describe this query?', getAttribute() { return null; }, nextElementSibling: next }]), answer);
+});
+
+test('labels inside a Ticket Survey section are ignored', () => {
+  const surveyLabel = { textContent: 'How would you best describe this query?', getAttribute() { return null; },
+    closest: (selector) => (/survey/.test(selector) ? {} : null), nextElementSibling: { innerText: 'Survey answer about Sage 300 People' } };
+  const outlineLabel = { textContent: 'How would you best describe this query?', getAttribute() { return null; },
+    closest: () => null, nextElementSibling: { innerText: 'Bank reconciliation fails.' } };
+  assert.equal(readMarkup([surveyLabel, outlineLabel]), 'Bank reconciliation fails.');
+});

@@ -42,6 +42,24 @@
     .map(([, label]) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|');
 
+  // Where the recorded query answer ends. NetAdmin renders the Outline
+  // answer next to other webform questions and the Ticket Survey, which must
+  // never be read as part of the query.
+  const SECTION_ANYWHERE = /\b(?:ticket\s+survey|customer\s+survey|survey\s+(?:question|response|result)s?|how\s+satisfied|how\s+would\s+you\s+rate|how\s+likely\s+are\s+you|overall\s+satisfaction|net\s+promoter)\b/i;
+  // Webform labels end the answer when followed by a separator; generic
+  // section headings only when they stand on a line of their own.
+  const SECTION_LINE = /\n\s*(?:(?:summary of the query|summary|describe the resolutions attempted|resolutions attempted|detail the steps to replicate|steps to replicate|incident\s*type\s*group|product|module|version|site code|customer code|error message|outcome you are working towards)\s*(?:[:?*\-]|\n|$)|(?:survey|outline|attachments?|actions?|action history|notes?|history|resolution|rating|comments?|feedback)\s*:?\s*(?:\n|$))/i;
+
+  /** The recorded query answer only: everything from the next section on is dropped. */
+  function isolateQuestion(value) {
+    let out = text(value).replace(/^\s*how would you best describe this query\s*\??\s*[:*]?\s*/i, '');
+    const anywhere = SECTION_ANYWHERE.exec(out);
+    if (anywhere) out = out.slice(0, anywhere.index);
+    const line = SECTION_LINE.exec(`${out}\n`);
+    if (line) out = out.slice(0, line.index);
+    return out.trim();
+  }
+
   /**
    * Pull the NetAdmin webform fields out of the logged text.
    * Values stop at the next known label so multi-line answers survive intact.
@@ -65,6 +83,8 @@
         if (value) fields[key] = value;
       }
     }
+    if (fields.question) fields.question = isolateQuestion(fields.question).replace(/\s+/g, ' ').trim();
+    if (!fields.question) delete fields.question;
     if (/Summary of the query/i.test(source) && !fields.summary) fields.summaryMissing = true;
     return fields;
   }
@@ -319,8 +339,13 @@
       product = classifyProduct(productField) || PRODUCT_UNKNOWN;
       source = product === PRODUCT_UNKNOWN ? 'none' : 'product-field';
     }
-    const mentionText = [ticket.question, fields.question, fields.summary, ticket.summary, ticket.subject, ticket.outline,
-      fields.stepsToReplicate, fields.errorMessage, group ? productField : ''].map(text).join('\n');
+    // Contradictions are judged on the recorded query only: page chrome, the
+    // Ticket Survey, the subject and other fields can name other products
+    // without saying anything about this query.
+    const question = isolateQuestion(ticket.question) || fields.question;
+    const mentionText = question
+      ? text(question)
+      : [fields.summary, ticket.summary, ticket.subject, ticket.outline, fields.errorMessage].map(text).join('\n');
     const mentioned = PRODUCT_MENTIONS.filter((item) => item.match.test(mentionText)).map((item) => item.label);
     const conflicts = product === PRODUCT_UNKNOWN ? [] : mentioned.filter((label) => label !== product);
     return {
@@ -1219,7 +1244,7 @@
    */
   function analyseTicket(ticket = {}, options = {}) {
     const fields = extractFields(ticket.rawLoggedText || ticket.description);
-    const question = text(ticket.question) || fields.question;
+    const question = isolateQuestion(ticket.question) || fields.question;
     const description = text(ticket.description);
     const summaryText = question || fields.summary || text(ticket.summary) || description || text(ticket.outline) || text(ticket.subject);
     const questionSource = question ? (text(ticket.questionSource) || 'How would you best describe this query?')
@@ -1573,6 +1598,7 @@
   root.NetAdminAnalyzer = Object.freeze({
     analyseTicket,
     extractFields,
+    isolateQuestion,
     stripSiteCodes,
     buildSearchPhrase,
     normalizeTerms,

@@ -311,3 +311,27 @@ test('an unrecognised group is named as unrecognised, not as missing', () => {
   assert.match(result.analysis.rootCause.content, /“Support-Sage Evolution” is not recognised/);
   assert.doesNotMatch(result.analysis.rootCause.content, /no Incident Type Group was read/);
 });
+
+test('only the Outline query answer is read: the Ticket Survey and other page text never change the analysis', () => {
+  const survey = '\nTicket Survey\nHow satisfied were you with Sage 300 People support?\nSummary: Sage Evolution and Pastel feedback';
+  const variants = [
+    { question: FRENCH_QUESTION + survey },
+    { rawLoggedText: `Incident type group\tSupport-Sage 300 Cloud\nHow would you best describe this query?: ${FRENCH_QUESTION}${survey}` },
+    { question: FRENCH_QUESTION, subject: 'Sage 300 People survey', outline: 'Sage Evolution', summary: 'Pastel' }
+  ];
+  for (const variant of variants) {
+    const result = A.analyseTicket(Object.assign({ incidentReference: 'WF600004', incidentTypeGroup: 'Support-Sage 300 Cloud' }, variant));
+    assert.deepEqual(Array.from(result.productScope.conflicts), []);
+    assert.equal(result.topic.id, 'report-language');
+    assert.equal(result.query, 'language French installed printing posting errors report');
+    assert.doesNotMatch(JSON.stringify(result.analysis.solution.facts), /Ticket Survey|satisfied|Evolution/);
+  }
+  assert.equal(A.isolateQuestion(`How would you best describe this query?: Bank rec out of balance.\nNote: client imported twice${survey}`),
+    'Bank rec out of balance.\nNote: client imported twice');
+  assert.equal(A.isolateQuestion('Payslips do not email.\nProduct: Sage 300 People'), 'Payslips do not email.');
+});
+
+test('a product named in the query itself is still flagged as a contradiction', () => {
+  const result = A.analyseTicket({ incidentReference: 'WF600005', incidentTypeGroup: 'Support-Sage 300 Cloud', question: 'Sage 300 People payslips do not print', subject: 'x' });
+  assert.deepEqual(Array.from(result.productScope.conflicts), ['Sage 300 People']);
+});

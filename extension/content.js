@@ -131,31 +131,82 @@ function scrapeCurrentTicket() {
 
 const QUESTION_LABEL = /^how would you best describe this query\s*\??\s*[:*]?\s*$/i;
 
-/** Read a webform answer without pulling in adjacent labels or page chrome. */
+// The query answer ends where the next webform question, page section or
+// the Ticket Survey starts; none of that is part of the query.
+const ANSWER_END_ANYWHERE = /\b(?:ticket\s+survey|customer\s+survey|survey\s+(?:question|response|result)s?|how\s+satisfied|how\s+would\s+you\s+rate|how\s+likely\s+are\s+you|overall\s+satisfaction|net\s+promoter)\b/i;
+const ANSWER_END_LINE = /\n\s*(?:(?:summary of the query|summary|describe the resolutions attempted|resolutions attempted|detail the steps to replicate|steps to replicate|incident\s*type\s*group|product|module|version|site code|customer code|error message|outcome you are working towards)\s*(?:[:?*\-]|\n|$)|(?:survey|outline|attachments?|actions?|action history|notes?|history|resolution|rating|comments?|feedback)\s*:?\s*(?:\n|$))/i;
+
+function cutAnswer(value) {
+  let out = String(value || '').replace(/^\s*how would you best describe this query\s*\??\s*[:*]?\s*/i, '');
+  const anywhere = ANSWER_END_ANYWHERE.exec(out);
+  if (anywhere) out = out.slice(0, anywhere.index);
+  const line = ANSWER_END_LINE.exec(`${out}\n`);
+  if (line) out = out.slice(0, line.index);
+  return out.trim();
+}
+
+const SECTION_HEADINGS = 'h1, h2, h3, h4, h5, legend, .panel-heading, .card-header, .section-title';
+const SURVEY_CONTAINER = '[id*="survey" i], [class*="survey" i], [data-section*="survey" i], [aria-label*="survey" i]';
+
+/** True when the element sits in the Ticket Survey part of the page. */
+function inSurvey(element) {
+  try {
+    if (element?.closest?.(SURVEY_CONTAINER)) return true;
+  } catch (error) {
+    // Older engines without the case-insensitive selector flag.
+    if (element?.closest?.('[id*="survey"], [class*="survey"], [id*="Survey"], [class*="Survey"]')) return true;
+  }
+  // A section headed "Ticket Survey" without a survey id or class: the
+  // nearest ancestor with headings decides, so a page-wide container that
+  // also holds the Outline section never counts as the survey.
+  for (let node = element?.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth += 1) {
+    const headings = Array.from(node.querySelectorAll?.(SECTION_HEADINGS) || []).map((item) => item.textContent || '');
+    if (!headings.length) continue;
+    if (headings.some((heading) => /^\s*outline\b|how would you best describe this query/i.test(heading))) return false;
+    if (headings.some((heading) => /^\s*(?:ticket\s+)?survey\b/i.test(heading))) return true;
+  }
+  return false;
+}
+
+/** True when the element sits in the Outline section of the ticket. */
+function inOutline(element) {
+  for (let node = element?.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth += 1) {
+    if (/outline/i.test(`${node.id || ''} ${typeof node.className === 'string' ? node.className : ''}`)) return true;
+    const heading = node.querySelector?.(SECTION_HEADINGS);
+    if (heading && /^\s*outline\b/i.test(heading.textContent || '')) return true;
+  }
+  return false;
+}
+
+/**
+ * Read the answer to "How would you best describe this query?" from the
+ * Outline section, without pulling in adjacent labels, page chrome or the
+ * Ticket Survey. Labels inside the Outline section are preferred; labels in
+ * a survey are never used.
+ */
 function readQuestionAnswer() {
-  const labels = document.querySelectorAll('label, th, dt, strong, b, span, td, div, p');
+  const labels = Array.from(document.querySelectorAll('label, th, dt, strong, b, span, td, div, p'))
+    .filter((label) => QUESTION_LABEL.test((label.textContent || '').trim()) && !inSurvey(label));
+  labels.sort((a, b) => Number(inOutline(b)) - Number(inOutline(a)));
   for (const label of labels) {
-    if (!QUESTION_LABEL.test((label.textContent || '').trim())) continue;
     const target = label.getAttribute('for') && document.getElementById(label.getAttribute('for'));
     const candidates = [target, label.nextElementSibling, label.parentElement?.nextElementSibling];
     if (label.parentElement && label.parentElement.textContent !== label.textContent) {
       candidates.push(label.parentElement);
     }
     for (const candidate of candidates) {
-      if (!candidate) continue;
+      if (!candidate || inSurvey(candidate)) continue;
       const control = candidate.matches?.('input, textarea, select') ? candidate
         : candidate.querySelector?.('input, textarea, select');
-      const value = (control?.value || candidate.value || candidate.innerText || candidate.textContent || '')
-        .replace(/^how would you best describe this query\s*\??\s*[:*]?\s*/i, '').trim();
-      const answer = value.split(/\n\s*(?:Summary of the query|Describe the resolutions attempted|Detail the steps to replicate|Product|Module)\s*[:?\-]/i)[0].trim();
-      if (/^(?:Summary of the query|Describe the resolutions attempted|Detail the steps to replicate|Product|Module)\s*[:?\-]/i.test(answer)) continue;
+      const answer = cutAnswer(control?.value || candidate.value || candidate.innerText || candidate.textContent || '');
       if (answer && !QUESTION_LABEL.test(answer)) return answer.slice(0, 4000);
     }
   }
   for (const control of document.querySelectorAll('textarea[aria-label], input[aria-label], textarea[name], input[name]')) {
+    if (inSurvey(control)) continue;
     if (/how would you best describe this query|describe.?this.?query/i.test(
       `${control.getAttribute('aria-label') || ''} ${control.getAttribute('name') || ''}`
-    )) return (control.value || '').trim().slice(0, 4000);
+    )) return cutAnswer(control.value || '').slice(0, 4000);
   }
   return '';
 }
@@ -240,6 +291,7 @@ function readIncidentTypeGroup() {
   const elements = document.querySelectorAll('label, th, dt, dd, td, span, strong, b, div, p');
   for (const element of elements) {
     const own = (element.textContent || '').replace(/\s+/g, ' ').trim();
+    if (own.length < 200 && /incident\s*type\s*group/i.test(own) && inSurvey(element)) continue;
     if (own.length < 200) {
       const inline = GROUP_INLINE.exec(own);
       if (inline) consider(inline[1]);
@@ -299,6 +351,7 @@ function readLoggedText() {
   );
   const parts = [];
   containers.forEach((element) => {
+    if (inSurvey(element) || element.matches?.(SURVEY_CONTAINER)) return;
     const value = element.innerText || element.textContent || '';
     if (value.trim()) parts.push(value.trim());
   });
