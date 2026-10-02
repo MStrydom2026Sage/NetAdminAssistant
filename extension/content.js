@@ -133,8 +133,8 @@ const QUESTION_LABEL = /^how would you best describe this query\s*\??\s*[:*]?\s*
 
 // The query answer ends where the next webform question, page section or
 // the Ticket Survey starts; none of that is part of the query.
-const ANSWER_END_ANYWHERE = /\b(?:ticket\s+survey|customer\s+survey|survey\s+(?:question|response|result)s?|how\s+satisfied|how\s+would\s+you\s+rate|how\s+likely\s+are\s+you|overall\s+satisfaction|net\s+promoter)\b/i;
-const ANSWER_END_LINE = /\n\s*(?:(?:summary of the query|summary|describe the resolutions attempted|resolutions attempted|detail the steps to replicate|steps to replicate|incident\s*type\s*group|product|module|version|site code|customer code|error message|outcome you are working towards)\s*(?:[:?*\-]|\n|$)|(?:survey|outline|attachments?|actions?|action history|notes?|history|resolution|rating|comments?|feedback)\s*:?\s*(?:\n|$))/i;
+const ANSWER_END_ANYWHERE = /\bticket\s+survey\b/i;
+const ANSWER_END_LINE = /\n\s*(?:(?:summary of the query|summary|describe the resolutions attempted|resolutions attempted|detail the steps to replicate|steps to replicate|incident\s*type\s*group|product|module|version|site code|customer code|error message|outcome you are working towards)\s*(?:[:?*\-]|\n|$)|(?:customer\s+survey|survey\s+(?:questions?|responses?|results?)|how\s+satisfied\b[^\n]*|how\s+would\s+you\s+rate\b[^\n]*|how\s+likely\s+are\s+you\b[^\n]*|overall\s+satisfaction|net\s+promoter(?:\s+score)?|survey|outline|attachments?|actions?|action history|notes?|history|resolution|rating|comments?|feedback)\s*:?\s*(?:\n|$))/i;
 
 function cutAnswer(value) {
   let out = String(value || '').replace(/^\s*how would you best describe this query\s*\??\s*[:*]?\s*/i, '');

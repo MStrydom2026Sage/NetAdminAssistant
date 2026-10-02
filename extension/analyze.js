@@ -45,10 +45,10 @@
   // Where the recorded query answer ends. NetAdmin renders the Outline
   // answer next to other webform questions and the Ticket Survey, which must
   // never be read as part of the query.
-  const SECTION_ANYWHERE = /\b(?:ticket\s+survey|customer\s+survey|survey\s+(?:question|response|result)s?|how\s+satisfied|how\s+would\s+you\s+rate|how\s+likely\s+are\s+you|overall\s+satisfaction|net\s+promoter)\b/i;
+  const SECTION_ANYWHERE = /\bticket\s+survey\b/i;
   // Webform labels end the answer when followed by a separator; generic
   // section headings only when they stand on a line of their own.
-  const SECTION_LINE = /\n\s*(?:(?:summary of the query|summary|describe the resolutions attempted|resolutions attempted|detail the steps to replicate|steps to replicate|incident\s*type\s*group|product|module|version|site code|customer code|error message|outcome you are working towards)\s*(?:[:?*\-]|\n|$)|(?:survey|outline|attachments?|actions?|action history|notes?|history|resolution|rating|comments?|feedback)\s*:?\s*(?:\n|$))/i;
+  const SECTION_LINE = /\n\s*(?:(?:summary of the query|summary|describe the resolutions attempted|resolutions attempted|detail the steps to replicate|steps to replicate|incident\s*type\s*group|product|module|version|site code|customer code|error message|outcome you are working towards)\s*(?:[:?*\-]|\n|$)|(?:customer\s+survey|survey\s+(?:questions?|responses?|results?)|how\s+satisfied\b[^\n]*|how\s+would\s+you\s+rate\b[^\n]*|how\s+likely\s+are\s+you\b[^\n]*|overall\s+satisfaction|net\s+promoter(?:\s+score)?|survey|outline|attachments?|actions?|action history|notes?|history|resolution|rating|comments?|feedback)\s*:?\s*(?:\n|$))/i;
 
   /** The recorded query answer only: everything from the next section on is dropped. */
   function isolateQuestion(value) {
@@ -1134,7 +1134,7 @@
       }
     }
     if (!matched) return 0;
-    if (rule.products.length === 1 && rule.products[0] === product) score += 2;
+    if ((rule.products || []).length === 1 && rule.products[0] === product) score += 2;
     if (rule.module && rule.module === moduleId) score += 1;
     return score;
   }
@@ -1277,7 +1277,7 @@
     if (best.id === 'generic' && product === PRODUCT_UNKNOWN && !contradiction) {
       let withheldScore = 0;
       RULES.forEach((rule) => {
-        const candidates = rule.products.map((item) => scoreRule(rule, intent, item, moduleInfo.id));
+        const candidates = (rule.products || []).map((item) => scoreRule(rule, intent, item, moduleInfo.id));
         const score = Math.max(0, ...candidates);
         if (score > withheldScore) {
           withheld = rule;

@@ -329,6 +329,18 @@ test('only the Outline query answer is read: the Ticket Survey and other page te
   assert.equal(A.isolateQuestion(`How would you best describe this query?: Bank rec out of balance.\nNote: client imported twice${survey}`),
     'Bank rec out of balance.\nNote: client imported twice');
   assert.equal(A.isolateQuestion('Payslips do not email.\nProduct: Sage 300 People'), 'Payslips do not email.');
+  assert.equal(A.isolateQuestion('The customer survey export fails and the user asks how would you rate the fix'),
+    'The customer survey export fails and the user asks how would you rate the fix');
+  assert.equal(A.isolateQuestion('Report fails.\nHow satisfied were you with the service?\nVery'), 'Report fails.');
+});
+
+test('content script and analyzer cut the query answer at the same boundaries', () => {
+  const analyzerSource = fs.readFileSync(path.join(EXTENSION_DIR, 'analyze.js'), 'utf8');
+  const contentSource = fs.readFileSync(path.join(EXTENSION_DIR, 'content.js'), 'utf8');
+  const pick = (source, name) => (source.match(new RegExp(`${name} = (/.+/i);`)) || [])[1];
+  assert.ok(pick(analyzerSource, 'SECTION_ANYWHERE'));
+  assert.equal(pick(contentSource, 'ANSWER_END_ANYWHERE'), pick(analyzerSource, 'SECTION_ANYWHERE'));
+  assert.equal(pick(contentSource, 'ANSWER_END_LINE'), pick(analyzerSource, 'SECTION_LINE'));
 });
 
 test('a product named in the query itself is still flagged as a contradiction', () => {
