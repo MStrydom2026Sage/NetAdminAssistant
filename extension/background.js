@@ -126,7 +126,7 @@ async function handleAnalyze(data, sendResponse) {
 
 // Bump (together with manifest.json) when the analysis rules or product
 // scoping change, so analyses cached by an older version are never reused.
-const ANALYSIS_VERSION = '0.7.7';
+const ANALYSIS_VERSION = '0.7.8';
 
 /**
  * Everything that can change the analysis of a ticket. The Incident Type

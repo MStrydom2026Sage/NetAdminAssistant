@@ -20,6 +20,7 @@ Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI ser
 | `sage-sources.js` | Optional Sage Knowledgebase / Community Hub retrieval, parsing and ranking |
 | `background.js` | Service worker: local analysis, caching, settings, message routing |
 | `content.js` | NetAdmin scraping (ticket, webform fields, actions, queues) and the floating button |
+| `community-search.js` | Community Hub only: fills the product area search box from the `#netadmin-search=` fragment of a side-panel link |
 | `sidepanel.js` / `html/sidepanel.html` | Side panel UI |
 | `styles/` | Dark theme with the green Sage accent |
 
@@ -30,7 +31,7 @@ Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI ser
 - Suggested areas and steps are labelled as suggestions; only ticket-derived facts appear under **Confirmed evidence from the ticket** and **Confirmed from this ticket**.
 - Next steps separate ticket facts, rules-based checks (each labelled with the rule) and guidance from a matched source (cited with its link). When no rule matches, precise questions derived from the recorded query are shown instead of generic boilerplate.
 - Past-ticket learning is still stored and can be reset, but it is not part of the analysis and there is no similar-tickets section.
-- The product comes from the NetAdmin Incident Type Group (`content.js` → `incidentTypeGroup`). Every confirmed product gets a pre-filled `/portal/ss/` Knowledgebase search (`NetAdminSources.KB_SEARCH_ROUTES`): filtered by the product alias (`custom_us_threehundred;`, `custom_za_threehundred`, `custom_za_en_threehundredpeople`); Community Hub product areas come from `NetAdminSources.COMMUNITY_GROUPS`. Knowledgebase and Community Hub searches carry the issue keywords only; only the Google link adds the product. The retired `viewsearch.jsp` endpoint is never used.
+- The product comes from the NetAdmin Incident Type Group (`content.js` → `incidentTypeGroup`). Every confirmed product gets a pre-filled `/portal/ss/` Knowledgebase search (`NetAdminSources.KB_SEARCH_ROUTES`): filtered by the product alias (`custom_us_threehundred;`, `custom_za_threehundred`, `custom_za_en_threehundredpeople`); Community Hub product areas come from `NetAdminSources.COMMUNITY_GROUPS`, and `community-search.js` (Community Hub only) fills their search box from the `#netadmin-search=` link fragment. Knowledgebase and Community Hub searches carry the issue keywords only; only the Google link adds the product. The retired `viewsearch.jsp` endpoint is never used.
 - Live Sage retrieval is optional, off by default, limited to the official Sage domains, time-limited and size-capped. Google stays a click-through link.
 - All rendered ticket and fetched text is HTML-escaped, and only `https://` links are rendered.
 

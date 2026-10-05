@@ -94,15 +94,6 @@
     return `https://${route.host}/portal/ss/?querytext=${querytext}&tabid=2${route.alias ? `&searchaliases=${route.alias}` : ''}`;
   }
 
-  /**
-   * The product-filtered Knowledgebase with an empty search, as in
-   * https://us-kb.sage.com/portal/ss/?querytext=&tabid=2&searchaliases=custom_us_threehundred%3B
-   */
-  function buildKbBrowseUrl(route) {
-    if (!route.alias) return '';
-    return `https://${route.host}/portal/ss/?querytext=&tabid=2&searchaliases=${route.alias}`;
-  }
-
   // Product groups on the Sage Community Hub, from working URLs supplied by
   // the support team. They open the product's own area of the hub.
   const COMMUNITY_GROUPS = Object.freeze([
@@ -114,6 +105,18 @@
   /** Community Hub product groups for a product (empty if none). */
   function communityGroups(product) {
     return COMMUNITY_GROUPS.filter((group) => group.product === product);
+  }
+
+  /**
+   * A Community Hub product area with the issue keywords in the fragment.
+   * The product area has no confirmed search URL of its own, so
+   * community-search.js (a content script on communityhub.sage.com) types the
+   * keywords into that page's search box. The fragment never reaches Sage's
+   * server.
+   */
+  function buildCommunityGroupSearchUrl(group, query) {
+    const phrase = text(query);
+    return phrase ? `${group.url}#netadmin-search=${encodeURIComponent(phrase)}` : group.url;
   }
 
   /** A Knowledgebase article link, as opposed to navigation or search pages. */
@@ -330,7 +333,7 @@
     kbSearchRoutes,
     COMMUNITY_GROUPS,
     communityGroups,
-    buildKbBrowseUrl,
+    buildCommunityGroupSearchUrl,
     buildKbSearchUrl,
     isKbArticleUrl,
     classifyPage,

@@ -57,10 +57,13 @@ test('Incident Type Group "Support-Sage 300 People" scopes the whole analysis to
   assert.equal(za.productScoped, true);
   assert.match(za.note, /custom_za_en_threehundredpeople/);
   const group = result.topic.links.find((link) => link.id === 'community-za');
-  assert.equal(group.url, 'https://communityhub.sage.com/za/sage-300-people/');
+  // The People Community Hub area carries the issue keywords for the search box.
+  assert.equal(group.url, `https://communityhub.sage.com/za/sage-300-people/#netadmin-search=${encodeURIComponent(result.query)}`);
+  assert.equal(group.kind, 'search');
   assert.equal(group.productScoped, true);
-  assert.ok(result.topic.links.find((link) => link.id === 'kb-za-browse').url
-    === 'https://za-kb.sage.com/portal/ss/?querytext=&tabid=2&searchaliases=custom_za_en_threehundredpeople');
+  // One Knowledgebase link only: the pre-filled search can be edited by hand.
+  assert.equal(result.topic.links.filter((link) => /za-kb\.sage\.com/.test(link.url)).length, 1);
+  assert.ok(result.topic.links.every((link) => !/-browse$/.test(link.id) && !/querytext=&/.test(link.url)));
   assert.ok(result.topic.links.every((link) => link.url !== 'https://za-kb.sage.com/'));
   // Only Google carries the product prefix; the character-limited
   // Knowledgebase and Community Hub searches carry the issue keywords only.
@@ -194,8 +197,10 @@ test('no link uses the retired endpoint or a constructed article URL, for any pr
   assert.equal(S.kbSearchRoutes('Sage product not specified').length, 0);
   const peopleRoute = S.kbSearchRoutes('Sage 300 People')[0];
   assert.equal(S.buildKbSearchUrl(peopleRoute, 'leave balance incorrect'), 'https://za-kb.sage.com/portal/ss/?querytext=leave+balance+incorrect&tabid=2&searchaliases=custom_za_en_threehundredpeople');
-  assert.equal(S.buildKbBrowseUrl(peopleRoute), 'https://za-kb.sage.com/portal/ss/?querytext=&tabid=2&searchaliases=custom_za_en_threehundredpeople');
-  assert.equal(S.buildKbBrowseUrl({ host: 'za-kb.sage.com', alias: '' }), '');
+  assert.equal(S.buildKbBrowseUrl, undefined);
+  const peopleGroup = S.communityGroups('Sage 300 People')[0];
+  assert.equal(S.buildCommunityGroupSearchUrl(peopleGroup, 'third party logon string'), 'https://communityhub.sage.com/za/sage-300-people/#netadmin-search=third%20party%20logon%20string');
+  assert.equal(S.buildCommunityGroupSearchUrl(peopleGroup, ''), 'https://communityhub.sage.com/za/sage-300-people/');
   assert.deepEqual(Array.from(S.communityGroups('Sage 300 Cloud'), (item) => item.url), ['https://communityhub.sage.com/za/sage-300/', 'https://communityhub.sage.com/us/sage-300/']);
   assert.equal(S.communityGroups('Sage product not specified').length, 0);
   assert.equal(S.buildKbSearchUrl(S.KB_SEARCH_ROUTES[0], 'Access Violation'),
@@ -290,9 +295,12 @@ test('French-language report ticket: Cloud group pre-fills the Cloud Knowledgeba
   assert.ok(result.query.split(' ').length <= 7);
   const urls = Array.from(result.topic.links, (link) => link.url);
   assert.equal(urls[0], 'https://us-kb.sage.com/portal/ss/?querytext=language+French+installed+printing+posting+errors+report&tabid=2&searchaliases=custom_us_threehundred;');
-  assert.ok(urls.includes('https://us-kb.sage.com/portal/ss/?querytext=&tabid=2&searchaliases=custom_us_threehundred;'));
+  assert.ok(urls.every((url) => !/querytext=&/.test(url)));
   const communityPaths = new Set(urls.filter((url) => new URL(url).hostname === 'communityhub.sage.com').map((url) => new URL(url).pathname));
   assert.ok(communityPaths.has('/za/sage-300/') && communityPaths.has('/us/sage-300/'));
+  for (const url of urls.filter((value) => /communityhub\.sage\.com\/(?:za|us)\//.test(value))) {
+    assert.equal(decodeURIComponent(new URL(url).hash), `#netadmin-search=${result.query}`);
+  }
   assert.ok(!communityPaths.has('/za/sage-300-people/'));
   assert.ok(urls.every((url) => url !== 'https://us-kb.sage.com/'));
   assert.match(result.analysis.solution.steps.join('\n'), /FRA folder|French reports/);

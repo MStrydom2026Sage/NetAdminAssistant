@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NetAdmin Assistant - Sage 300 Support Helper",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "description": "Offline rules analysis for Sage 300 support tickets. No AI service, API key or helper server required.",
   "author": "MStrydom2026",
   "permissions": [
@@ -34,6 +34,11 @@
       ],
       "js": ["content.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["https://communityhub.sage.com/*"],
+      "js": ["community-search.js"],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [

@@ -1164,15 +1164,6 @@
           ? `Pre-filled Knowledgebase search limited to the ${product} search alias (${route.alias}). Open each article and confirm it applies to ${product}.`
           : `Pre-filled Knowledgebase search with the issue keywords only (no confirmed ${product} search alias for this Knowledgebase, so results are not filtered by product). Open each article and confirm it applies to ${product}.`
       }));
-      routes.filter((route) => route.alias).forEach((route) => links.push({
-        id: `${route.sourceId}-browse`,
-        name: `${route.name} — ${product} articles`,
-        title: `${route.name} · ${product} (empty search, to refine by hand)`,
-        url: root.NetAdminSources.buildKbBrowseUrl(route),
-        kind: 'home',
-        productScoped: true,
-        note: `The Knowledgebase with only ${product} selected, to refine the search by hand.`
-      }));
       const prefilled = routes.map((route) => route.sourceId);
       [['kb-za', 'Sage Knowledgebase (ZA)', 'https://za-kb.sage.com/'], ['kb-us', 'Sage Knowledgebase (US)', 'https://us-kb.sage.com/']]
         .filter(([id]) => !prefilled.includes(id) && (id === 'kb-za' || product === CLOUD))
@@ -1188,11 +1179,11 @@
       communityGroups(product).forEach((group) => links.push({
         id: `community-${group.region.toLowerCase()}`,
         name: `Sage Community Hub (${group.region}) — ${product}`,
-        title: `Sage Community Hub (${group.region}) · ${product} forum — search there for ${quoted}`,
-        url: group.url,
-        kind: 'home',
+        title: `Sage Community Hub (${group.region}) · ${product} search: ${phrase}`,
+        url: root.NetAdminSources.buildCommunityGroupSearchUrl(group, phrase),
+        kind: 'search',
         productScoped: true,
-        note: `Opens the ${product} area of the Community Hub. A search URL inside the product area is not yet confirmed, so search there for the phrase above.`
+        note: `Opens the ${product} area of the Community Hub and the extension types the issue keywords into its search box. If the box stays empty, search there for the phrase above.`
       }));
       links.push({
         id: 'community',
