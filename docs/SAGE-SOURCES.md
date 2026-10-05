@@ -43,7 +43,7 @@ The Community Hub product areas come from working URLs supplied by the user (`Ne
 
 To filter a search by product, set `alias` on its route to the full alias once it has been confirmed from a working URL; the empty-search product link is then offered too. To add a product, append `{ sourceId, name, host, product, alias }`.
 
-**Verification status:** the Sage Knowledgebase hosts could not be reached from the environment in which this version was built (DNS resolution was blocked), so none of the routes or aliases above were validated live by the extension's authors. All three aliases and the Community Hub product areas rely on user-supplied working URLs; confirm it in a signed-in browser before relying on it.
+**Verification status:** the Sage Knowledgebase hosts could not be reached from the environment in which this version was built (DNS resolution was blocked), so none of the routes or aliases above were validated live by the extension's authors. All three aliases and the Community Hub product areas rely on user-supplied working URLs; confirm them in a signed-in browser before relying on them.
 
 ## What it does
 
