@@ -1116,7 +1116,8 @@
   //    retrieved result or a curated entry links to it.
   //  - /portal/ss/?querytext=… is the search route, pre-filled for every confirmed
   //    product (NetAdminSources.KB_SEARCH_ROUTES): filtered by a fully known
-  //    product alias, or with the product name added to the search text.
+  //    product alias where one is known. The search text is the issue keywords
+  //    only; the product name would use up the limited search length.
   // Google is always a manual click-through and is never read automatically.
   const GOOGLE = 'https://www.google.com/search?q=';
   const COMMUNITY = 'https://communityhub.sage.com/search?q=';
