@@ -47,17 +47,21 @@ test('Incident Type Group "Support-Sage 300 People" scopes the whole analysis to
   assert.equal(result.topic.id, 'people-tax-paye');
   assert.ok(result.knowledge.length);
   assert.ok(result.knowledge.every((entry) => !cloudIds.has(entry.id)));
-  // The ZA Knowledgebase search is pre-filled with the issue and the People
-  // product name (no People alias is known, so it is not presented as
-  // filtered); the Cloud alias and the US Knowledgebase are never used.
+  // The ZA Knowledgebase search is pre-filled with the issue keywords only
+  // (no People alias is known, so it is not presented as filtered); the
+  // Cloud alias and the US Knowledgebase are never used.
   assert.ok(urls(result).every((url) => !/custom_us_threehundred|us-kb\.sage\.com|searchaliases/.test(url)));
   const za = result.topic.links.find((link) => link.id === 'kb-za-search');
-  assert.equal(za.url, `https://za-kb.sage.com/portal/ss/?querytext=Sage+300+People+${encodeURIComponent(result.query).replace(/%20/g, '+')}&tabid=2`);
+  assert.equal(za.url, `https://za-kb.sage.com/portal/ss/?querytext=${encodeURIComponent(result.query).replace(/%20/g, '+')}&tabid=2`);
   assert.equal(za.kind, 'search');
   assert.equal(za.productScoped, false);
-  assert.match(za.note, /“Sage 300 People” added to the search text.*not filtered by product/);
+  assert.match(za.note, /issue keywords only.*not filtered by product/);
   assert.ok(result.topic.links.every((link) => link.url !== 'https://za-kb.sage.com/'));
-  for (const url of decoded(result).filter((value) => /google|communityhub/.test(value))) assert.match(url, /Sage 300 People/);
+  // Only Google carries the product prefix; the character-limited
+  // Knowledgebase and Community Hub searches carry the issue keywords only.
+  for (const url of decoded(result).filter((value) => /google/.test(value))) assert.match(url, /^https:\/\/www\.google\.com\/search\?q="Sage 300 People" /);
+  for (const url of decoded(result).filter((value) => /za-kb|communityhub/.test(value))) assert.doesNotMatch(url, /Sage 300/);
+  assert.equal(decoded(result).filter((value) => /google/.test(value)).length, 1);
   for (const url of decoded(result)) assert.doesNotMatch(url, /Sage 300 Cloud|"Sage 300" -/);
 });
 
@@ -184,7 +188,7 @@ test('no link uses the retired endpoint or a constructed article URL, for any pr
   ]);
   assert.equal(S.kbSearchRoutes('Sage product not specified').length, 0);
   const peopleRoute = S.kbSearchRoutes('Sage 300 People')[0];
-  assert.equal(S.buildKbSearchUrl(peopleRoute, 'leave balance incorrect'), 'https://za-kb.sage.com/portal/ss/?querytext=Sage+300+People+leave+balance+incorrect&tabid=2');
+  assert.equal(S.buildKbSearchUrl(peopleRoute, 'leave balance incorrect'), 'https://za-kb.sage.com/portal/ss/?querytext=leave+balance+incorrect&tabid=2');
   assert.equal(S.buildKbBrowseUrl(peopleRoute), '');
   assert.equal(S.buildKbSearchUrl(S.KB_SEARCH_ROUTES[0], 'Access Violation'),
     'https://us-kb.sage.com/portal/ss/?querytext=Access+Violation&tabid=2&searchaliases=custom_us_threehundred;');
@@ -233,9 +237,9 @@ test('retrieval uses only verified product routes and rejects 404, sign-in and n
   try {
     const cloud = await S.fetchSageSources({ query: 'Database error', terms: A.normalizeTerms('Database error logging'), product: 'Sage 300 Cloud' });
     assert.deepEqual(calls, [
-      'https://za-kb.sage.com/portal/ss/?querytext=Sage+300+Cloud+Database+error&tabid=2',
+      'https://za-kb.sage.com/portal/ss/?querytext=Database+error&tabid=2',
       'https://us-kb.sage.com/portal/ss/?querytext=Database+error&tabid=2&searchaliases=custom_us_threehundred;',
-      'https://communityhub.sage.com/search?q=Sage%20300%20Cloud%20Database%20error'
+      'https://communityhub.sage.com/search?q=Database%20error'
     ]);
     assert.equal(cloud.results.length, 1);
     assert.equal(cloud.results[0].articleId, '260422192647140');
@@ -247,8 +251,8 @@ test('retrieval uses only verified product routes and rejects 404, sign-in and n
     calls.length = 0;
     const people = await S.fetchSageSources({ query: 'Database error', terms: ['database', 'error'], product: 'Sage 300 People' });
     assert.deepEqual(calls, [
-      'https://za-kb.sage.com/portal/ss/?querytext=Sage+300+People+Database+error&tabid=2',
-      'https://communityhub.sage.com/search?q=Sage%20300%20People%20Database%20error'
+      'https://za-kb.sage.com/portal/ss/?querytext=Database+error&tabid=2',
+      'https://communityhub.sage.com/search?q=Database%20error'
     ]);
     assert.equal(people.results.length, 0);
     const peopleReasons = Object.fromEntries(people.unavailable.map((item) => [item.name, item.reason]));

@@ -1124,8 +1124,10 @@
   // Search operators that keep each product's searches on that product,
   // independent of the keyword phrase.
   const PRODUCT_SEARCH = {
-    [CLOUD]: { kbSites: 'site:za-kb.sage.com OR site:us-kb.sage.com', constraint: '"Sage 300" -"Sage 300 People"', keyword: 'Sage 300 Cloud' },
-    [PEOPLE]: { kbSites: 'site:za-kb.sage.com', constraint: '"Sage 300 People"', keyword: 'Sage 300 People' }
+    // Only Google gets the product prefix: it narrows Google results, while
+    // the Knowledgebase and Community Hub searches are character-limited.
+    [CLOUD]: { constraint: '"Sage 300" -"Sage 300 People"' },
+    [PEOPLE]: { constraint: '"Sage 300 People"' }
   };
 
   function kbRoutesFor(product) {
@@ -1154,7 +1156,7 @@
         productScoped: Boolean(route.alias),
         note: route.alias
           ? `Pre-filled Knowledgebase search limited to the ${product} search alias (${route.alias}). Open each article and confirm it applies to ${product}.`
-          : `Pre-filled Knowledgebase search with “${route.keyword || product}” added to the search text (no confirmed ${product} search alias for this Knowledgebase, so results are not filtered by product). Open each article and confirm it applies to ${product}.`
+          : `Pre-filled Knowledgebase search with the issue keywords only (no confirmed ${product} search alias for this Knowledgebase, so results are not filtered by product). Open each article and confirm it applies to ${product}.`
       }));
       routes.filter((route) => route.alias).forEach((route) => links.push({
         id: `${route.sourceId}-browse`,
@@ -1178,26 +1180,17 @@
           note: `No verified ${product} search alias is configured for this Knowledgebase, so the search cannot be pre-filled. Open it, filter on ${product} and search for the phrase above.`
         }));
       links.push({
-        id: 'kb-site-search',
-        name: `Sage Knowledgebase via Google site search — ${product} (manual click-through)`,
-        title: `Sage Knowledgebase via Google site search — ${product}: ${phrase}`,
-        url: `${GOOGLE}${encodeURIComponent(`${scope.kbSites} ${scope.constraint} ${phrase}`)}`,
-        kind: 'manual',
-        productScoped: false,
-        note: `Google restricted to the Sage Knowledgebase and to ${product} wording. Nothing is retrieved automatically; confirm the product on each article.`
-      });
-      links.push({
         id: 'community',
         name: 'Sage Community Hub',
         title: `Sage Community Hub · ${product}: ${phrase}`,
-        url: `${COMMUNITY}${encodeURIComponent(`${scope.keyword} ${phrase}`)}`,
+        url: `${COMMUNITY}${encodeURIComponent(phrase)}`,
         kind: 'search',
         productScoped: false,
-        note: `Keyword search including the product name; Community Hub results are not filtered by product, so confirm each thread is about ${product}.`
+        note: `Search with the issue keywords only; Community Hub results are not filtered by product, so confirm each thread is about ${product}.`
       });
       links.push({
         id: 'google',
-        name: 'Google (opens in a new tab)',
+        name: `Google — ${product} (opens in a new tab)`,
         title: `Google · ${product}: ${phrase}`,
         url: `${GOOGLE}${encodeURIComponent(`${scope.constraint} ${phrase}`)}`,
         kind: 'manual',
@@ -1217,15 +1210,6 @@
         productScoped: false,
         note: `${unconfirmed}. The Knowledgebase search cannot be pre-filled; confirm the product first.`
       }));
-    links.push({
-      id: 'kb-site-search',
-      name: 'Sage Knowledgebase via Google site search (manual click-through)',
-      title: `Sage Knowledgebase via Google site search: ${phrase}`,
-      url: `${GOOGLE}${encodeURIComponent(`site:za-kb.sage.com OR site:us-kb.sage.com ${phrase}`)}`,
-      kind: 'manual',
-      productScoped: false,
-      note: `${unconfirmed}. Nothing is retrieved automatically.`
-    });
     links.push({
       id: 'community',
       name: 'Sage Community Hub',

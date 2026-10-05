@@ -72,7 +72,8 @@ test('knowledgebase searches are pre-filled, and unfiltered ones are labelled as
   const { context, nodes } = createPanel();
   context.renderAnalysis(A.analyseTicket(TICKET), false, nodes.results);
   assert.doesNotMatch(nodes.results.innerHTML, /viewsearch\.jsp/);
-  assert.match(nodes.results.innerHTML, /za-kb\.sage\.com\/portal\/ss\/\?querytext=Sage\+300\+Cloud\+/);
+  assert.match(nodes.results.innerHTML, /za-kb\.sage\.com\/portal\/ss\/\?querytext=A%2FR\+statement/);
+  assert.doesNotMatch(nodes.results.innerHTML, /Google site search|site%3A/);
   assert.match(nodes.results.innerHTML, /results are not filtered by product/);
   assert.doesNotMatch(nodes.results.innerHTML, /Pre-filled searches \(click to open\)/);
 });
@@ -131,7 +132,8 @@ test('Sage searches show the issue phrase and the Incident Type Group product fi
   const peopleHtml = people.nodes.results.innerHTML;
   assert.match(peopleHtml, /Product filter: Sage 300 People/);
   assert.doesNotMatch(peopleHtml, /custom_us_threehundred|us-kb\.sage\.com|Sage 300 Cloud/);
-  assert.match(peopleHtml, /za-kb\.sage\.com\/portal\/ss\/\?querytext=Sage\+300\+People\+Error\+when\+user\+logs\+on/);
+  assert.match(peopleHtml, /za-kb\.sage\.com\/portal\/ss\/\?querytext=Error\+when\+user\+logs\+on/);
+  assert.match(peopleHtml, /google\.com\/search\?q=%22Sage%20300%20People%22%20Error/);
 
   const unknown = createPanel();
   unknown.context.renderAnalysis(A.analyseTicket({ incidentReference: 'WF3', rawLoggedText: question }), false, unknown.nodes.results);

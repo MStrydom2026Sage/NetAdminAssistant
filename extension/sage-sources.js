@@ -51,12 +51,13 @@
   //    complete value is known. custom_us_threehundred; (US Knowledgebase,
   //    Sage 300 Cloud) comes in full from a working search URL supplied by the
   //    support team.
-  //  - keyword routes are used where no full alias is known (the ZA Sage 300
-  //    alias is only known truncated, custom_za_en_threehundr…, and no Sage 300
-  //    People alias is known). The product name is added to the search text
-  //    instead, so the search is pre-filled but not product-filtered by the
-  //    Knowledgebase; each article still has to be checked. Never guess an
-  //    alias: when one is confirmed, set `alias` and the route becomes filtered.
+  //  - routes without an alias are used where no full alias is known (the ZA
+  //    Sage 300 alias is only known truncated, custom_za_en_threehundr…, and no
+  //    Sage 300 People alias is known). The search box is character-limited,
+  //    so only the issue keywords are searched, never the product name; the
+  //    results are not product-filtered by the Knowledgebase and each article
+  //    still has to be checked. Never guess an alias: when one is confirmed,
+  //    set `alias` and the route becomes filtered.
   // None of these routes could be validated live from the build environment.
   const KB_SEARCH_ROUTES = Object.freeze([
     Object.freeze({
@@ -64,24 +65,21 @@
       name: 'Sage Knowledgebase (US)',
       host: 'us-kb.sage.com',
       product: 'Sage 300 Cloud',
-      alias: 'custom_us_threehundred;',
-      keyword: ''
+      alias: 'custom_us_threehundred;'
     }),
     Object.freeze({
       sourceId: 'kb-za',
       name: 'Sage Knowledgebase (ZA)',
       host: 'za-kb.sage.com',
       product: 'Sage 300 Cloud',
-      alias: '',
-      keyword: 'Sage 300 Cloud'
+      alias: ''
     }),
     Object.freeze({
       sourceId: 'kb-za',
       name: 'Sage Knowledgebase (ZA)',
       host: 'za-kb.sage.com',
       product: 'Sage 300 People',
-      alias: '',
-      keyword: 'Sage 300 People'
+      alias: ''
     })
   ]);
 
@@ -91,13 +89,12 @@
   }
 
   /**
-   * The /portal/ss/ search URL for a route and a keyword phrase: filtered by
-   * the product alias when one is known, otherwise with the product name
-   * added to the search text.
+   * The /portal/ss/ search URL for a route and a keyword phrase, filtered by
+   * the product alias when one is known. The search text is the issue
+   * keywords only: the product name would use up the limited search length.
    */
   function buildKbSearchUrl(route, query) {
-    const searchText = route.alias ? text(query) : `${route.keyword || route.product} ${text(query)}`.trim();
-    const querytext = encodeURIComponent(searchText).replace(/%20/g, '+');
+    const querytext = encodeURIComponent(text(query)).replace(/%20/g, '+');
     return `https://${route.host}/portal/ss/?querytext=${querytext}&tabid=2${route.alias ? `&searchaliases=${route.alias}` : ''}`;
   }
 
@@ -285,7 +282,7 @@
       const route = known ? kbSearchRoutes(product).find((item) => item.sourceId === source.id) : null;
       let url = '';
       if (route) url = buildKbSearchUrl(route, query);
-      else if (source.search) url = `${source.search}${encodeURIComponent(known ? `${product} ${query}` : query)}`;
+      else if (source.search) url = `${source.search}${encodeURIComponent(query)}`;
       if (!url) {
         unavailable.push({
           name: source.name,

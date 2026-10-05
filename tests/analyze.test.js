@@ -292,8 +292,10 @@ test('no Sage link uses the retired knowledgebase search endpoint', () => {
   const result = A.analyseTicket(query('The A/R customer statement report does not print.'), { knowledge: require('./load-analyzer').loadKnowledgeFile().entries });
   const urls = result.topic.links.map((link) => link.url);
   for (const url of urls) assert.doesNotMatch(url, /viewsearch\.jsp/);
-  assert.ok(urls.some((url) => /^https:\/\/za-kb\.sage\.com\/portal\/ss\/\?querytext=Sage\+300\+Cloud\+/.test(url)));
-  assert.ok(urls.some((url) => /^https:\/\/www\.google\.com\/search\?q=site%3Aza-kb\.sage\.com/.test(url)));
+  // Knowledgebase searches carry only the issue keywords; the Google
+  // site: search (which returned no results) is no longer offered.
+  assert.ok(urls.some((url) => /^https:\/\/za-kb\.sage\.com\/portal\/ss\/\?querytext=A%2FR\+statement/.test(url)));
+  assert.ok(urls.every((url) => !/site%3A|Sage\+300/.test(url)));
   // without a full alias the ZA search is pre-filled but not presented as product-filtered
   const kb = result.topic.links.find((link) => link.id === 'kb-za-search');
   assert.equal(kb.productScoped, false);
