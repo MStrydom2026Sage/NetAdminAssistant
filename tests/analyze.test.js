@@ -296,9 +296,9 @@ test('no Sage link uses the retired knowledgebase search endpoint', () => {
   // site: search (which returned no results) is no longer offered.
   assert.ok(urls.some((url) => /^https:\/\/za-kb\.sage\.com\/portal\/ss\/\?querytext=A%2FR\+statement/.test(url)));
   assert.ok(urls.every((url) => !/site%3A|Sage\+300/.test(url)));
-  // without a full alias the ZA search is pre-filled but not presented as product-filtered
+  // the ZA search is filtered by the verified Sage 300 Cloud alias
   const kb = result.topic.links.find((link) => link.id === 'kb-za-search');
-  assert.equal(kb.productScoped, false);
-  assert.match(kb.note, /not filtered by product/i);
+  assert.equal(kb.productScoped, true);
+  assert.match(kb.url, /&searchaliases=custom_za_threehundred$/);
   assert.doesNotMatch(JSON.stringify(result), /viewsearch\.jsp/);
 });

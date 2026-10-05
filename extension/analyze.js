@@ -1131,6 +1131,11 @@
     [PEOPLE]: { constraint: '"Sage 300 People"' }
   };
 
+  function communityGroups(product) {
+    const sources = root.NetAdminSources;
+    return sources && typeof sources.communityGroups === 'function' ? sources.communityGroups(product) : [];
+  }
+
   function kbRoutesFor(product) {
     const sources = root.NetAdminSources;
     return sources && typeof sources.kbSearchRoutes === 'function' ? sources.kbSearchRoutes(product) : [];
@@ -1162,7 +1167,7 @@
       routes.filter((route) => route.alias).forEach((route) => links.push({
         id: `${route.sourceId}-browse`,
         name: `${route.name} — ${product} articles`,
-        title: `${route.name} · ${product} articles (no search text)`,
+        title: `${route.name} · ${product} (empty search, to refine by hand)`,
         url: root.NetAdminSources.buildKbBrowseUrl(route),
         kind: 'home',
         productScoped: true,
@@ -1180,14 +1185,23 @@
           productScoped: false,
           note: `No verified ${product} search alias is configured for this Knowledgebase, so the search cannot be pre-filled. Open it, filter on ${product} and search for the phrase above.`
         }));
+      communityGroups(product).forEach((group) => links.push({
+        id: `community-${group.region.toLowerCase()}`,
+        name: `Sage Community Hub (${group.region}) — ${product}`,
+        title: `Sage Community Hub (${group.region}) · ${product} forum — search there for ${quoted}`,
+        url: group.url,
+        kind: 'home',
+        productScoped: true,
+        note: `Opens the ${product} area of the Community Hub. A search URL inside the product area is not yet confirmed, so search there for the phrase above.`
+      }));
       links.push({
         id: 'community',
         name: 'Sage Community Hub',
-        title: `Sage Community Hub · ${product}: ${phrase}`,
+        title: `Sage Community Hub (all products) · ${phrase}`,
         url: `${COMMUNITY}${encodeURIComponent(phrase)}`,
         kind: 'search',
         productScoped: false,
-        note: `Search with the issue keywords only; Community Hub results are not filtered by product, so confirm each thread is about ${product}.`
+        note: `Search across the whole Community Hub with the issue keywords; results are not filtered by product, so confirm each thread is about ${product}.`
       });
       links.push({
         id: 'google',

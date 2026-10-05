@@ -46,18 +46,14 @@
   ];
 
   // Product Knowledgebase search routes. Every product gets a pre-filled
-  // /portal/ss/ search:
-  //  - alias routes restrict the search with a product search alias whose
-  //    complete value is known. custom_us_threehundred; (US Knowledgebase,
-  //    Sage 300 Cloud) comes in full from a working search URL supplied by the
-  //    support team.
-  //  - routes without an alias are used where no full alias is known (the ZA
-  //    Sage 300 alias is only known truncated, custom_za_en_threehundr…, and no
-  //    Sage 300 People alias is known). The search box is character-limited,
-  //    so only the issue keywords are searched, never the product name; the
-  //    results are not product-filtered by the Knowledgebase and each article
-  //    still has to be checked. Never guess an alias: when one is confirmed,
-  //    set `alias` and the route becomes filtered.
+  // /portal/ss/ search restricted by the product search alias; the search
+  // text is the issue keywords only, because the search box is
+  // character-limited and the alias already selects the product. Each alias
+  // comes in full from a working URL supplied by the support team:
+  //  - us-kb  Sage 300 Cloud   custom_us_threehundred;  (…&searchaliases=custom_us_threehundred%3B)
+  //  - za-kb  Sage 300 Cloud   custom_za_threehundred
+  //  - za-kb  Sage 300 People  custom_za_en_threehundredpeople
+  // Never guess an alias: a route without one is labelled as not filtered.
   // None of these routes could be validated live from the build environment.
   const KB_SEARCH_ROUTES = Object.freeze([
     Object.freeze({
@@ -72,14 +68,14 @@
       name: 'Sage Knowledgebase (ZA)',
       host: 'za-kb.sage.com',
       product: 'Sage 300 Cloud',
-      alias: ''
+      alias: 'custom_za_threehundred'
     }),
     Object.freeze({
       sourceId: 'kb-za',
       name: 'Sage Knowledgebase (ZA)',
       host: 'za-kb.sage.com',
       product: 'Sage 300 People',
-      alias: ''
+      alias: 'custom_za_en_threehundredpeople'
     })
   ]);
 
@@ -99,12 +95,25 @@
   }
 
   /**
-   * The product-filtered Knowledgebase landing page (no search text), as in
-   * https://us-kb.sage.com/portal/ss/?tabid=3&searchaliases=custom_us_threehundred
+   * The product-filtered Knowledgebase with an empty search, as in
+   * https://us-kb.sage.com/portal/ss/?querytext=&tabid=2&searchaliases=custom_us_threehundred%3B
    */
   function buildKbBrowseUrl(route) {
     if (!route.alias) return '';
-    return `https://${route.host}/portal/ss/?tabid=3&searchaliases=${route.alias.replace(/;$/, '')}`;
+    return `https://${route.host}/portal/ss/?querytext=&tabid=2&searchaliases=${route.alias}`;
+  }
+
+  // Product groups on the Sage Community Hub, from working URLs supplied by
+  // the support team. They open the product's own area of the hub.
+  const COMMUNITY_GROUPS = Object.freeze([
+    Object.freeze({ product: 'Sage 300 People', region: 'ZA', url: 'https://communityhub.sage.com/za/sage-300-people/' }),
+    Object.freeze({ product: 'Sage 300 Cloud', region: 'ZA', url: 'https://communityhub.sage.com/za/sage-300/' }),
+    Object.freeze({ product: 'Sage 300 Cloud', region: 'US', url: 'https://communityhub.sage.com/us/sage-300/' })
+  ]);
+
+  /** Community Hub product groups for a product (empty if none). */
+  function communityGroups(product) {
+    return COMMUNITY_GROUPS.filter((group) => group.product === product);
   }
 
   /** A Knowledgebase article link, as opposed to navigation or search pages. */
@@ -319,6 +328,8 @@
     ALLOWED_HOSTS,
     KB_SEARCH_ROUTES,
     kbSearchRoutes,
+    COMMUNITY_GROUPS,
+    communityGroups,
     buildKbBrowseUrl,
     buildKbSearchUrl,
     isKbArticleUrl,

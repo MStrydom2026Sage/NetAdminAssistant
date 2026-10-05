@@ -28,20 +28,22 @@ The rules engine builds one concise phrase from the recorded question only (the 
 | `/portal/app/portlets/results/viewsearch.jsp?q=…` | Old search page | **Never** — it returns HTTP 404. Tests fail if it reappears. |
 | `/portal/app/portlets/results/viewsolution.jsp?solutionid=…` | One specific article; needs a real solution ID | Only for article links that were actually returned by a source. Solution IDs are never generated. |
 | `/portal/ss/?querytext=…&tabid=2&searchaliases=…` | Search, restricted by a product search alias | Routes in `NetAdminSources.KB_SEARCH_ROUTES` with a full alias |
-| `/portal/ss/?querytext=…&tabid=2` | Search with the issue keywords only, not product-filtered | Routes in `KB_SEARCH_ROUTES` without a known alias |
-| `/portal/ss/?tabid=3&searchaliases=…` | Knowledgebase with only the product selected, no search text | Same aliases, offered next to the pre-filled search |
+| `/portal/ss/?querytext=…&tabid=2` | Search with the issue keywords only, not product-filtered | Only a route without a known alias (none at present) |
+| `/portal/ss/?querytext=&tabid=2&searchaliases=…` | Knowledgebase with only the product selected and an empty search | Same aliases, offered next to the pre-filled search |
 
 Every confirmed product gets a pre-filled Knowledgebase search. `KB_SEARCH_ROUTES` uses an alias only when it is known in full; otherwise the link is labelled as not filtered by product. The search text is always the issue keywords only: the Knowledgebase search box is character-limited, so the product name is never added (only the Google link carries the product):
 
 | Host | Product | Alias | Status |
 |---|---|---|---|
 | `us-kb.sage.com` | Sage 300 Cloud | `custom_us_threehundred;` | Taken from a complete working URL supplied by the user (`https://us-kb.sage.com/portal/ss/?querytext=Access+Violation&tabid=2&searchaliases=custom_us_threehundred;`). |
-| `za-kb.sage.com` | Sage 300 Cloud | none (`custom_za_en_threehundr…` is only known truncated and is not guessed) | Pre-filled search `https://za-kb.sage.com/portal/ss/?querytext=<phrase>&tabid=2`, labelled as not product-filtered. |
-| `za-kb.sage.com` | Sage 300 People | none (no People alias could be confirmed) | Pre-filled search `https://za-kb.sage.com/portal/ss/?querytext=<phrase>&tabid=2`, labelled as not product-filtered. The US Knowledgebase and the Cloud alias are never used for People. |
+| `za-kb.sage.com` | Sage 300 Cloud | `custom_za_threehundred` | Taken from a working URL supplied by the user (`https://za-kb.sage.com/portal/ss/?searchaliases=custom_za_threehundred&tabid=2`). |
+| `za-kb.sage.com` | Sage 300 People | `custom_za_en_threehundredpeople` | Taken from a working URL supplied by the user (`https://za-kb.sage.com/portal/ss/?querytext=&searchaliases=custom_za_en_threehundredpeople&tabid=2`). The US Knowledgebase and the Cloud aliases are never used for People. |
 
-To filter a search by product, set `alias` on its route to the full alias once it has been confirmed from a working URL; the `?tabid=3&searchaliases=…` product link is then offered too. To add a product, append `{ sourceId, name, host, product, alias }`.
+The Community Hub product areas come from working URLs supplied by the user (`NetAdminSources.COMMUNITY_GROUPS`): Sage 300 People → `https://communityhub.sage.com/za/sage-300-people/`; Sage 300 Cloud → `https://communityhub.sage.com/za/sage-300/` and `https://communityhub.sage.com/us/sage-300/`. They are offered as product links; no search URL inside a product area has been confirmed, so the pre-filled Community Hub search (`/search?q=<phrase>`) still covers all products and is labelled as such.
 
-**Verification status:** the Sage Knowledgebase hosts could not be reached from the environment in which this version was built (DNS resolution was blocked), so none of the routes or aliases above were validated live by the extension's authors. The US Cloud route relies on the user-supplied working URL; confirm it in a signed-in browser before relying on it.
+To filter a search by product, set `alias` on its route to the full alias once it has been confirmed from a working URL; the empty-search product link is then offered too. To add a product, append `{ sourceId, name, host, product, alias }`.
+
+**Verification status:** the Sage Knowledgebase hosts could not be reached from the environment in which this version was built (DNS resolution was blocked), so none of the routes or aliases above were validated live by the extension's authors. All three aliases and the Community Hub product areas rely on user-supplied working URLs; confirm it in a signed-in browser before relying on it.
 
 ## What it does
 
@@ -56,7 +58,7 @@ Nothing is fabricated: only the text present in the retrieved page is displayed,
 
 | Source | Host | Automatic retrieval |
 |---|---|---|
-| Sage Knowledgebase (ZA) | `za-kb.sage.com` | Sage 300 Cloud and Sage 300 People tickets, via `/portal/ss/` with the issue keywords only, when enabled. Results only count as product-specific when they name the product. |
+| Sage Knowledgebase (ZA) | `za-kb.sage.com` | Sage 300 Cloud (`custom_za_threehundred`) and Sage 300 People (`custom_za_en_threehundredpeople`) tickets, via `/portal/ss/` with the issue keywords, when enabled. |
 | Sage Knowledgebase (US) | `us-kb.sage.com` | Sage 300 Cloud tickets only, via `/portal/ss/` with `custom_us_threehundred;`, when enabled |
 | Sage Community Hub | `communityhub.sage.com` | Yes, when enabled |
 
