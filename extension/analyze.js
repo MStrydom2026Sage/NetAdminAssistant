@@ -823,7 +823,7 @@
         'Record the exact take-on error, the Sage 300 People version and update level, and the value tested for the two employees.',
         'Confirm with whoever configured SSO which logon format the single sign-on setup actually sends for these users (DOMAIN\\username or the e-mail address), and test that format by capturing it manually on one ESS user and signing in.',
         'If the manually captured e-mail address signs in but the ESS User Take-On batch rejects the same value, the batch applies a stricter validation than the screen: log it with Sage with the error, a sample take-on file and the version, and ask for the supported way to load the logon string in bulk.',
-        'Do not update the ESS user tables directly in the database for the approximately 2250 users unless Sage provides a supported script; test any bulk method on a copy of the database first.'
+        'Do not update the ESS user tables directly in the database for a large number of users unless Sage provides a supported script; test any bulk method on a copy of the database first.'
       ]
     },
     {

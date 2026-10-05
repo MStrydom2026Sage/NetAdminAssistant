@@ -307,7 +307,7 @@
         // Knowledgebase pages only count when they link to actual articles.
         const parsed = parseResults(html, source.id)
           .filter((result) => !/kb\.sage\.com$/.test(source.host) || isKbArticleUrl(result.url))
-          .map((result) => Object.assign(result, { productScoped: Boolean(route && route.alias) }));
+          .map((result) => Object.assign({}, result, { productScoped: Boolean(route && route.alias) }));
         if (!parsed.length) unavailable.push({ name: source.name, reason: 'no result could be read from the page', url: source.home || '' });
         results.push(...parsed);
       } catch (error) {
