@@ -140,3 +140,68 @@ test('Sage searches show the issue phrase and the Incident Type Group product fi
   assert.match(unknown.nodes.results.innerHTML, /No product filter: the Incident Type Group was not found/);
   assert.doesNotMatch(unknown.nodes.results.innerHTML, /custom_us_threehundred/);
 });
+
+test('AI results escape untrusted text, show provenance and do not overwrite the offline reply', () => {
+  const { context, nodes } = createPanel();
+  nodes.replyText.value = 'Offline draft';
+  const target = { innerHTML: '' };
+  context.renderLiveAnalysis({
+    issue: '<img src=x onerror=alert(1)>',
+    likelyCause: 'Not established', confidence: 'Low', confirmedEvidence: ['<script>bad</script>'],
+    reasoningSummary: 'Insufficient evidence', alreadyAttempted: ['Recalculated'],
+    recommendedSteps: ['Check remaining evidence'], informationNeeded: [],
+    sources: [], searchQueries: ['Scheduler error'], evidence: [],
+    replyNeeded: false, suggestedReply: 'Do not show', replyNote: 'Already requested'
+  }, 'test-model', target);
+  assert.doesNotMatch(target.innerHTML, /<img|<script>|Do not show/);
+  assert.match(target.innerHTML, /&lt;img/);
+  assert.match(target.innerHTML, /No directly relevant Sage article verified/);
+  assert.match(target.innerHTML, /Already attempted — not next steps/);
+  assert.match(target.innerHTML, /No new reply needed/);
+  assert.equal(nodes.replyText.value, 'Offline draft');
+});
+
+test('live review freshly scrapes the active ticket and discards results after a newer analysis', async () => {
+  const { context, nodes } = createPanel();
+  nodes.aiConsent = { checked: true };
+  nodes.aiAttachments = { files: [] };
+  nodes.liveAnalyzeBtn = { disabled: false };
+  nodes.liveAIResults = { innerHTML: '' };
+  const messages = [];
+  let liveCallback;
+  const freshTicket = { ...TICKET, incidentReference: 'WF400002', question: 'Fresh ticket error' };
+  context.chrome.tabs = {
+    query: async () => [{ id: 8 }],
+    sendMessage(id, request, callback) {
+      assert.equal(id, 8);
+      assert.equal(request.action, 'scrapeTicket');
+      callback({ success: true, data: freshTicket });
+    }
+  };
+  context.chrome.runtime.sendMessage = (request, callback) => {
+    messages.push(request);
+    if (request.action === 'analyzeLive') liveCallback = callback;
+  };
+  const pending = context.reviewWithLiveAI();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(messages.find((request) => request.action === 'analyzeLive').data.incidentReference, 'WF400002');
+  assert.equal(nodes.liveAnalyzeBtn.disabled, true);
+  context.analyzeAndDisplay(TICKET, nodes.results);
+  assert.equal(nodes.liveAIResults.innerHTML, '');
+  liveCallback({ success: true, analysis: { issue: 'Stale analysis' } });
+  await pending;
+  assert.equal(nodes.liveAIResults.innerHTML, '');
+  assert.equal(nodes.liveAnalyzeBtn.disabled, false);
+});
+
+test('a live review without approval does not scrape or send ticket data', async () => {
+  const { context, nodes } = createPanel();
+  nodes.aiConsent = { checked: false };
+  nodes.liveAnalyzeBtn = { disabled: false };
+  nodes.liveAIResults = { innerHTML: '' };
+  context.chrome.runtime.sendMessage = () => assert.fail('must not send without approval');
+  context.chrome.tabs = { query: () => assert.fail('must not scrape without approval') };
+  await context.reviewWithLiveAI();
+  assert.match(nodes.liveAIResults.innerHTML, /Confirm approval/);
+  assert.equal(nodes.liveAnalyzeBtn.disabled, false);
+});

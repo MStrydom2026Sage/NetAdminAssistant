@@ -1,6 +1,6 @@
 # NetAdmin Assistant Chrome Extension
 
-Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI service, API key or helper server is used. Optional Sage retrieval sends a sanitised search phrase to official Sage sites after opt-in.
+Offline, rules-based analysis of Sage 300 support tickets in NetAdmin, with optional live AI review through a local helper. Offline use needs no service or key. Optional Sage retrieval sends a sanitised search phrase to official Sage sites after opt-in. See [helper setup](../SETUP.md#live-ai-helper-optional) before enabling AI data sharing.
 
 ## Installation
 
@@ -19,6 +19,7 @@ Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI ser
 | `history.js` | Anonymised past-ticket learning with retention and reset |
 | `sage-sources.js` | Optional Sage Knowledgebase / Community Hub retrieval, parsing and ranking |
 | `background.js` | Service worker: local analysis, caching, settings, message routing |
+| `live-ai.js` | Explicit live-review payload whitelist and loopback helper client; no provider credentials |
 | `content.js` | NetAdmin scraping (ticket, webform fields, actions, queues) and the floating button |
 | `community-search.js` | Community Hub only: fills the product area search box from the `#netadmin-search=` fragment of a side-panel link |
 | `sidepanel.js` / `html/sidepanel.html` | Side panel UI |
@@ -27,6 +28,7 @@ Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI ser
 ## Behaviour
 
 - Analysis runs entirely in the service worker using `analyze.js`.
+- **Review with live AI** is separate and requires an approval checkbox and a running helper. It freshly reads the active ticket, sends only the query/troubleshooting/history whitelist and selected text evidence, and displays a separate uncached AI result and draft. Normal **Analyze** and chat stay offline.
 - The toolbar icon and floating button open the side panel directly. The question field is shown there before suggestions, with its source; when evidence is weak, use the clarifying checks rather than a module diagnosis.
 - Suggested areas and steps are labelled as suggestions; only ticket-derived facts appear under **Confirmed evidence from the ticket** and **Confirmed from this ticket**.
 - Next steps separate ticket facts, rules-based checks (each labelled with the rule) and guidance from a matched source (cited with its link). When no rule matches, precise questions derived from the recorded query are shown instead of generic boilerplate.
@@ -38,6 +40,6 @@ Offline, rules-based analysis of Sage 300 support tickets in NetAdmin. No AI ser
 ## Development
 
 ```bash
-npm test         # regression suite (Node built-in runner, no dependencies, no network)
+npm test         # regression suite (no dependencies or external network calls)
 npm run samples  # print the analysis for every sample ticket
 ```

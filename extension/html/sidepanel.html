@@ -20,6 +20,17 @@
     <div id="backendStatus" class="status-indicator" role="status" aria-live="polite" hidden></div>
     <div id="results" class="analysis-container"><div class="empty-state"><p>Click “Analyze” to start analyzing the current ticket.</p></div></div>
 
+    <section class="analysis-section" id="liveAISection">
+      <h3>Live AI evidence review</h3>
+      <p class="confidence-text">Optional. Start the local Node helper first (see SETUP.md). Each review freshly reads the active ticket and researches Sage sources. Paid API usage may apply.</p>
+      <label class="field-label" for="aiAttachments">Optional text evidence (.txt, .log, .csv; up to 3 files, 20 KB each)</label>
+      <input id="aiAttachments" type="file" accept=".txt,.log,.csv" multiple>
+      <p class="confidence-text">Ticket attachment links are not downloaded automatically. Select original text files here; screenshots, PDF and Office files are not supported. Remove secrets and personal information before sending.</p>
+      <label class="toggle"><input type="checkbox" id="aiConsent"> I have approval to send this ticket's query, troubleshooting fields, visible history and selected evidence to OpenAI. Research queries are also sent to web search.</label>
+      <button id="liveAnalyzeBtn" class="btn btn-small btn-primary">Review with live AI</button>
+      <div id="liveAIResults" role="status" aria-live="polite"></div>
+    </section>
+
     <section class="analysis-section" id="replySection" hidden>
       <h3>✉️ Suggested customer reply</h3>
       <p class="confidence-text">Suggested guidance only. Review and edit before sending.</p>
@@ -43,8 +54,8 @@
       <button id="resetHistoryBtn" class="btn btn-small btn-ghost">🧹 Reset stored ticket learning</button>
     </section>
 
-    <p class="disclaimer">Offline rules analysis. Suggested guidance is generated from local rules, the local knowledge base and previously completed tickets on this device. It is not a confirmed Sage answer, and ticket content is never sent to an AI service or any third party.</p>
-    <footer class="app-footer">NetAdmin Assistant · offline rules engine · no API key or helper server required</footer>
+    <p class="disclaimer">Suggestions are not confirmed Sage answers. Offline analysis stays local. Only an explicitly requested live AI review sends ticket evidence to OpenAI; basic redaction is not a guarantee of anonymity. Review all AI guidance and drafts before use. AI results are not saved by this extension.</p>
+    <footer class="app-footer">NetAdmin Assistant · offline rules + optional live AI helper</footer>
   </div>
   <script src="../sage-sources.js"></script>
   <script src="../analyze.js"></script>
