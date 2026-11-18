@@ -2,11 +2,11 @@
  * Background Service Worker
  * Handles extension initialization and message routing.
  *
- * All ticket analysis is performed locally by the rules engine. There is no
- * backend server, no API key and no AI provider.
+ * Offline analysis is local. Explicit live reviews use the loopback AI helper;
+ * provider keys never enter the extension or its storage.
  */
 
-importScripts('analyze.js', 'knowledge.js', 'history.js', 'sage-sources.js');
+importScripts('analyze.js', 'knowledge.js', 'history.js', 'sage-sources.js', 'live-ai.js');
 
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -44,6 +44,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case 'chat':
       handleChat(request, sendResponse);
+      return true;
+
+    case 'analyzeLive':
+      handleLiveAnalyze(request, sendResponse);
       return true;
 
     case 'learnCompleted':
@@ -92,6 +96,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return false;
   }
 });
+
+async function handleLiveAnalyze(request, sendResponse) {
+  try {
+    const local = NetAdminAnalyzer.analyseTicket(request.data || {});
+    const payload = NetAdminLiveAI.buildRequest(request.data || {}, local, request.attachments, request.consent);
+    const result = await NetAdminLiveAI.analyse(payload);
+    sendResponse(result);
+  } catch (error) {
+    console.error('[NetAdmin Assistant] Live analysis failed:', error.name);
+    sendResponse({
+      success: false,
+      error: error.name === 'TypeError'
+        ? 'Cannot reach the AI helper. Start it at http://127.0.0.1:3000 and retry.'
+        : error.name === 'TimeoutError' ? 'Live AI timed out. Try again.' : error.message
+    });
+  }
+}
 
 /**
  * Handle ticket analysis request using the offline rules engine.

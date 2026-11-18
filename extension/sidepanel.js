@@ -1,12 +1,13 @@
 /**
  * Side panel script.
  *
- * The analysis is produced by the local rules engine in the service worker.
- * Nothing here contacts an AI service, an API key or a helper server.
+ * Local analysis remains independent of explicitly requested live AI reviews.
  */
 
 let currentTicket = {};
 let currentAnalysis = null;
+let analysisRevision = 0;
+let liveRevision = 0;
 
 document.addEventListener('DOMContentLoaded', async () => {
   const analyzeBtn = document.getElementById('analyzeBtn');
@@ -18,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshHistoryCount();
 
   analyzeBtn?.addEventListener('click', () => analyzeActiveTab(resultsContainer));
+  document.getElementById('liveAnalyzeBtn')?.addEventListener('click', reviewWithLiveAI);
   refreshSourcesBtn?.addEventListener('click', () => refreshSources(resultsContainer));
   clearCacheBtn?.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'clearCache' }, () => setStatus('Cached analyses cleared', 'healthy'));
@@ -130,9 +132,15 @@ async function analyzeActiveTab(container) {
 }
 
 function analyzeAndDisplay(ticketData, container) {
+  const revision = ++analysisRevision;
+  ++liveRevision;
+  const aiResults = document.getElementById('liveAIResults');
+  if (aiResults) aiResults.innerHTML = '';
   currentTicket = ticketData;
+  currentAnalysis = null;
   container.innerHTML = '<div class="loading">Analyzing ticket…</div>';
   chrome.runtime.sendMessage({ action: 'analyze', data: ticketData }, (response) => {
+    if (revision !== analysisRevision) return;
     if (chrome.runtime.lastError) return showError(container, chrome.runtime.lastError.message);
     if (!response?.success) return showError(container, response?.error || 'Analysis failed.');
     currentAnalysis = response.data;
@@ -152,10 +160,88 @@ function refreshSources(container, silent) {
     moduleLabel: currentAnalysis.module?.label,
     terms: currentAnalysis.questionSource === 'Not provided' ? [] : (currentAnalysis.searchTerms || NetAdminAnalyzer.normalizeTerms(currentAnalysis.query))
   };
+  const revision = analysisRevision;
   chrome.runtime.sendMessage({ action: 'fetchSources', data: payload }, (response) => {
+    if (revision !== analysisRevision) return;
     if (chrome.runtime.lastError || !response?.success) return renderSources(null);
     renderSources(response.data);
   });
+}
+
+async function reviewWithLiveAI() {
+  const target = document.getElementById('liveAIResults');
+  const button = document.getElementById('liveAnalyzeBtn');
+  if (button.disabled) return;
+  button.disabled = true;
+  let revision = ++liveRevision;
+  try {
+    if (!document.getElementById('aiConsent').checked) {
+      throw new Error('Confirm approval to send ticket evidence before requesting live AI.');
+    }
+    const files = Array.from(document.getElementById('aiAttachments').files || []);
+    if (files.length > 3 || files.some((file) => file.size > 20000 || !/\.(txt|log|csv)$/i.test(file.name))) {
+      throw new Error('Select at most three .txt, .log or .csv files, each no larger than 20 KB.');
+    }
+    const attachments = await Promise.all(files.map(async (file) => ({ name: file.name, text: await file.text() })));
+    if (revision !== liveRevision) return;
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) throw new Error('Could not identify the active tab.');
+    const ticketResponse = await new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tab.id, { action: 'scrapeTicket' }, (response) => {
+        if (chrome.runtime.lastError) reject(new Error('Refresh the NetAdmin ticket page and try again.'));
+        else if (!response?.success) reject(new Error(response?.error || 'Could not read the ticket.'));
+        else resolve(response);
+      });
+    });
+    if (revision !== liveRevision) return;
+    // Refresh local context too: a live review must never use a previous ticket's history.
+    analyzeAndDisplay(ticketResponse.data, document.getElementById('results'));
+    revision = liveRevision;
+    target.innerHTML = '<p class="loading">Researching Sage sources and reviewing ticket evidence...</p>';
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        action: 'analyzeLive', consent: true, data: ticketResponse.data, attachments
+      }, (result) => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(result);
+      });
+    });
+    if (revision !== liveRevision) return;
+    if (!response?.success) throw new Error(response?.error || 'Live AI analysis failed.');
+    renderLiveAnalysis(response.analysis, response.model, target);
+  } catch (error) {
+    if (revision === liveRevision) showError(target, error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderLiveAnalysis(data, model, target) {
+  const list = (title, items, ordered = false) => {
+    if (!items?.length) return '';
+    const tag = ordered ? 'ol' : 'ul';
+    return `<h4>${escapeHtml(title)}</h4><${tag} class="steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</${tag}>`;
+  };
+  target.innerHTML = `<h4>${escapeHtml(data.issue)}</h4>`
+    + `<p class="confidence-text">Live AI (${escapeHtml(model)}) · ${escapeHtml(data.confidence)} confidence · review required</p>`
+    + `<p class="content">Likely interpretation: ${escapeHtml(data.likelyCause)}</p>`
+    + list('Confirmed evidence (AI interpretation; verify sources)', data.confirmedEvidence)
+    + `<p class="content">${escapeHtml(data.reasoningSummary)}</p>`
+    + list('Already attempted — not next steps', data.alreadyAttempted)
+    + list('Remaining recommended steps', data.recommendedSteps, true)
+    + list('Still needed', data.informationNeeded)
+    + `<h4>Research evidence</h4>`
+    + (data.evidence || []).map((item) => `<p class="confidence-text">${escapeHtml(item.label)}: ${escapeHtml(item.strength)}</p>`
+      + (item.findings.length ? `<ul class="steps">${item.findings.map((finding) =>
+        `<li>${escapeHtml(finding.finding)} — ${safeLink({ url: finding.sourceUrl, title: 'Source' })}</li>`).join('')}</ul>` : '')
+      + list('Unresolved by research', item.unresolved)).join('')
+    + (data.sources?.length
+      ? `<h4>Cited sources</h4><ul>${data.sources.map((item) => `<li>${safeLink(item)}</li>`).join('')}</ul>`
+      : '<p class="confidence-text">No directly relevant Sage article verified. Do not treat this as a confirmed solution.</p>')
+    + `<p class="confidence-text">Searches: ${escapeHtml((data.searchQueries || []).join(' | '))}</p>`
+    + (data.replyNeeded
+      ? `<h4>AI draft reply — review before sending</h4><div class="content">${escapeHtml(data.suggestedReply)}</div>`
+      : `<p class="content">No new reply needed: ${escapeHtml(data.replyNote)}</p>`);
 }
 
 function showError(container, message) {

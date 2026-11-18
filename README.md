@@ -1,10 +1,10 @@
-# NetAdmin Assistant v0.7.8
+# NetAdmin Assistant v0.8.0
 
-**Offline Sage 300 support ticket analyser for NetAdmin**
+**Sage 300 support ticket analyser with optional live AI review**
 
 NetAdmin Assistant is a Chrome (Manifest V3) extension that reads the NetAdmin ticket you are working on and produces a deterministic, rules-based analysis: a suggested problem area, ticket-specific next steps, Sage search links and a draft customer reply.
 
-There is **no AI service, no API key, no OpenAI, no localhost helper server, no Express, no CORS layer and no dotenv**. Ticket content and attachments stay local by default; enabling optional Sage retrieval sends only a sanitised search phrase to the official Sage sites.
+Offline analysis requires no service or API key. An optional loopback-only Node helper adds explicitly requested OpenAI research and evidence-aware diagnosis. Ticket content stays local unless you approve and request a live AI review; optional Sage retrieval sends a sanitised search phrase to official Sage sites.
 
 ## 🚀 Quick start
 
@@ -14,7 +14,7 @@ There is **no AI service, no API key, no OpenAI, no localhost helper server, no 
 4. Open a NetAdmin ticket and click the green 🔍 floating button, or open the side panel from the extension icon
 5. Click **Analyze**
 
-No `npm install` is required to use the extension. Node is only used to run the regression tests.
+No `npm install` is required. See [SETUP.md](SETUP.md#live-ai-helper-optional) for the optional helper (Node 22+, OpenAI API key and approved data sharing).
 
 ## 🧠 How the analysis works
 
@@ -24,8 +24,9 @@ No `npm install` is required to use the extension. Node is only used to run the 
 | Curated knowledge base (`extension/knowledge/knowledge-base.json`) | Editable local entries merged and ranked alongside the rules | No |
 | Past-ticket learning (`extension/history.js`) | Anonymised local records of completed NetAdmin tickets, stored on this device only | No |
 | Live Sage sources (`extension/sage-sources.js`) | Optional ranking of Sage Knowledgebase and Sage Community Hub search results | Yes (optional) |
+| Live AI helper (`server/`) | Explicit, uncached review: short search plan, official Sage research, secondary Community fallback and structured diagnosis with sources, uncertainty, attempted work and remaining steps | Yes (optional, paid API) |
 
-The local rules engine is always the guaranteed fallback. Everything except the last row works with no network access at all.
+The local rules engine remains available independently if either online feature is unavailable. AI guidance is a draft, not a guaranteed accuracy improvement or a confirmed Sage answer.
 
 ### Rules coverage
 
@@ -79,8 +80,9 @@ Records are stored in `chrome.storage.local`, capped at 200 entries, kept for a 
 | `sidePanel` | Open the analysis side panel |
 | `https://netadmin.sage.co.za/*`, `https://*.sage.co.za/*` | Read the ticket you are working on |
 | `https://za-kb.sage.com/*`, `https://us-kb.sage.com/*`, `https://communityhub.sage.com/*` | Optional Knowledgebase and Community Hub retrieval; on `communityhub.sage.com` only, pre-filling the product area search box from a link opened in the side panel |
+| `http://127.0.0.1:3000/*` | Explicit requests to the local AI helper; provider credentials stay server-side |
 
-Full ticket content, attachments and customer details stay in the browser. Optional Sage retrieval sends a sanitised search phrase to the three official Sage sites only after opt-in; clicking a search link also sends its search phrase to that site.
+Offline analysis stays in the browser. Optional Sage retrieval sends a sanitised search phrase to the three official Sage sites only after opt-in; clicking a search link also sends its search phrase to that site. A live AI review sends the recorded query, product/version, troubleshooting fields, up to 50 visible history rows and explicitly selected text attachments to the helper and OpenAI. Customer metadata, ticket reference, authenticated attachment URLs and browser credentials are excluded. Basic email/site-code redaction is not comprehensive anonymisation: remove confidential data first and obtain organisational approval. Web search receives generated technical search queries. The helper uses `store: false`, logs no ticket content and saves no analyses; provider retention policies still apply.
 
 ## ✅ Tests
 
@@ -89,7 +91,7 @@ npm test        # node --test tests/*.test.js
 npm run samples # print the analysis for every sample ticket
 ```
 
-The suite uses Node's built-in test runner with no runtime dependencies, loads the extension modules in a bare VM context (so any Node-only API in extension code fails the tests) and makes **no network calls** — live-source parsing and ranking are covered with static fixtures.
+The suite uses Node's built-in test runner with no runtime dependencies and loads extension modules in a bare VM context (so Node-only APIs in extension code fail the tests). It makes **no external network or paid provider calls**: source parsing uses static fixtures, and helper integration tests use temporary loopback ports and mocked OpenAI responses.
 
 ## 📁 Layout
 
@@ -101,6 +103,7 @@ extension/
   knowledge/knowledge-base.json
   history.js            # anonymised past-ticket learning
   sage-sources.js       # optional KB / Community retrieval and ranking
+  live-ai.js            # whitelisted live-review request and helper client
   background.js         # service worker, local analysis and caching
   content.js            # NetAdmin scraping and floating button
   sidepanel.js
@@ -108,11 +111,17 @@ extension/
   styles/common.css, styles/sidepanel.css
 tests/
 docs/
+server/
+  server.js             # loopback HTTP helper; key from local environment
+  analysis.js           # structured search, verified citations and diagnosis
+  .env.example          # copy to .env locally; never commit credentials
 ```
 
 ## ⚠️ Limitations
 
 - Suggested areas and steps are rules-based guidance, not a confirmed Sage answer.
+- Optional AI results are separate from offline guidance and its customer reply. They are never automatically sent to customers, saved in the extension cache, or used for local learning.
+- AI evidence uploads support original `.txt`, `.log` and `.csv` files only (three files, 20 KB each); no authenticated attachment downloading, screenshots, PDFs or Office document parsing is implemented.
 - If the question field is absent or ambiguous, the displayed source and clarifying checks make this visible; no diagnosis of the unseen ticket can be inferred from screenshots alone.
 - Past-ticket learning is stored locally but is not used to diagnose the current ticket.
 - Live Sage retrieval depends on the signed-in session and the current page markup; it fails gracefully.

@@ -1,3 +1,6 @@
 # Extension icon files are intentionally not ignored. Add them here only when supplied.
 *.crx
 *.pem
+.env
+.env.*
+!.env.example

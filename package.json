@@ -1,8 +1,9 @@
 {
   "name": "netadminassistant",
   "version": "1.0.0",
-  "description": "Offline Sage support ticket rules engine for the NetAdmin Assistant browser extension",
+  "description": "Local Sage support ticket analysis with an optional live AI research helper",
   "scripts": {
+    "ai-helper": "node --env-file=server/.env server/server.js",
     "test": "node --test tests/*.test.js",
     "samples": "node tests/run-samples.js --reply"
   },
